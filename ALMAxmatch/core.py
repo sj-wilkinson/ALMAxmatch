@@ -262,7 +262,30 @@ class archiveSearch:
         """Return observed frequency according to nu_0 / nu = 1 + z."""
         return restFreq/(1+z)
 
-    def runQueriesWithLines(self, restFreqs, redshiftRange=(0, 1000), **kwargs):
+    def _lineObserved(self, target_frequency, observed_frequency_ranges, linename=""):
+        """Loop through the observed spectral windows to check if 
+            target_frequency is covered by spectral setup"""
+        
+        # Initialize boolean line observed flag array (i.e., True = line frequency in archive spw coverage)
+        lineObserved = []
+        
+        # loop over spectral window frequencies for each observation
+        for spw in observed_frequency_ranges:
+            # if observed frequency is in spw, flag as True and break inner loop (move on to next observation) 
+            if spw[0] <= target_frequency <= spw[-1]:
+                print(linename,"observed frequency", target_frequency, "GHz",
+                          "in range", spw[0], "-", spw[-1])
+                lineObserved.append(True) # line IS observed
+            else:
+                lineObserved.append(False) # line NOT observed
+            
+        # Boolean line observed flag for each observation 
+        if True in lineObserved:
+            return True
+        else:
+            return False
+
+    def runQueriesWithLines(self, restFreqs, redshiftRange=(0, 1000), line_names="", **kwargs):
         """Run queries for spectral lines on targets saved in archiveSearch object.
 
         Parameters
@@ -382,25 +405,34 @@ class archiveSearch:
                 # mark flags if spw is on line (initialized to False)
                 lineObserved = np.zeros((len(ALMAnedResults), len(restFreqs)),
                                          dtype=bool)
-                for i,row in enumerate(ALMAnedResults):
-                    for j in range(len(restFreqs)):
-                        observedFreq = self._observedFreq(restFreqs[j],
-                                                          row['Redshift'])
-                        for spwRange in row['Frequency ranges']:
-                            if not lineObserved[i, j]:
-                                if spwRange[0] <= observedFreq <= spwRange[1]:
-                                    lineObserved[i, j] = True
-                            else:
-                                break
+
+
+                for i, row in enumerate(ALMAnedResults):
+
+                    # target redshift
+                    z = row['Redshift']
+                    
+                    # observed frequencies
+                    observed_frequencies = [self._observedFreq(rf, row['Redshift']) for rf in restFreqs]
+
+                    if line_names == "":
+                        line_names = ['Line{:}'.format(i) for i in range(len(restFreqs))]
+                    elif (len(line_names) != len(restFreqs)) and ():
+                        raise TypeError('line_names must be list of the same length as the number of lines')
+
+                    # loop over the target lines, return a boolean flag array and add it to astropy table
+                    for j, (observed_frequency, linename) in enumerate(zip(observed_frequencies,line_names)):
+                        lineObserved[i, j]=self._lineObserved(target_frequency=observed_frequency
+                                                                    , observed_frequency_ranges=row['Frequency ranges']
+                                                                    , linename=linename)
+
                 for i in range(len(restFreqs)):
-                    key = 'Line{:} observed'.format(i)
-                    ALMAnedResults[key] = lineObserved[:, i]
+                    ALMAnedResults[line_names[i]] = lineObserved[:, i]
 
                 # remove rows which have no lines covered
-                lineCount = np.array(ALMAnedResults['Line0 observed'], dtype=int)
+                lineCount = np.array(ALMAnedResults[line_names[0]], dtype=int)
                 for i in range(1, len(restFreqs)):
-                    key = 'Line{:} observed'.format(i)
-                    lineCount += np.array(ALMAnedResults[key], dtype=int)
+                    lineCount += np.array(ALMAnedResults[line_names[i]], dtype=int)
                 noLinesInds = np.where(lineCount == 0)
                 ALMAnedResults.remove_rows(noLinesInds)
 
