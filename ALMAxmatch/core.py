@@ -121,7 +121,7 @@ class archiveSearch:
                 try: 
                     self.queryResults[target] = Alma.query_object(target,
                                                                  public=public,
-                                                               science=science,
+                                                                 science=science,
                                                                   **kwargs)
                     self.isObjectQuery[target] = True
                 except ValueError:
@@ -130,8 +130,9 @@ class archiveSearch:
             
             else: # for querying regions
                 results = Alma.query_region(*self.targets[target],
-                                            public=public, science=science,
-                                            **kwargs)
+                                                public=public,
+                                                science=science,
+                                                **kwargs)
                 self.queryResults[target] = results
         for key in self.invalidName:
             self.targets.pop(key)
@@ -258,6 +259,44 @@ class archiveSearch:
             lines.append('')
         return lines
 
+    def largeSkyQueryWithLines(self, restFreqs, redshiftRange=(0, 1000), line_names="", **kwargs):
+         """Running search on large search areas.
+
+        Accepts a list of lines and a redshift range, searches the ALMA archive for line observations
+
+        Parameters
+        ----------
+
+        restFreqs : array_like
+            The spectral line rest frequencies to search the query results for
+
+        redshiftRange : 2 element array_like (lowz, highz), optional
+            A 2-element list, tuple, etc. defining the lower and upper limits
+            of the object redshifts (in that order) to be searched for. The 
+            restFreqs will be shifted using this range to only find 
+            observations that have spectral coverage in that redshift range. 
+            Default is to search from z=0 to 1000 (i.e. all redshifts).
+
+        All arguments are passed to astroquery.alma.Alma.query_object except
+        frequency, which cannot be specified here since it is used to limit 
+        the query to frequencies that could contain the lines in the specified
+        redshift range.
+
+        archiveSearch.queryResults will contain an astropy table with all observations
+        that match a NED object name and have a redshift, with flags for each
+        line specifying if the spectral coverage includes the line frequency for
+        the object's redshift.
+
+        archiveSearch.queryResultsNoNED will contain an astropy table with all
+        observations that did not have a match in NED, based on name.
+
+        archiveSearch.queryResultsNoNEDz will contain an astropy table with all
+        observations that match a NED object name but do not have a redshift.
+        """
+
+
+        return
+
     def _observedFreq(self, restFreq, z):
         """Return observed frequency according to nu_0 / nu = 1 + z."""
         return restFreq/(1+z)
@@ -301,7 +340,7 @@ class archiveSearch:
             observations that have spectral coverage in that redshift range. 
             Default is to search from z=0 to 1000 (i.e. all redshifts).
 
-        All arguments are passed to astroquery.alma.Alma.query_object except
+        All arguments are passed to astroquery.alma.Alma.query except
         frequency, which cannot be specified here since it is used to limit 
         the query to frequencies that could contain the lines in the specified
         redshift range.
@@ -404,6 +443,7 @@ class archiveSearch:
                 ALMAnedResults.rename_column('Object Name', 'NED source name')
                 ALMAnedResults.rename_column('RA_2', 'NED RA')
                 ALMAnedResults.rename_column('Dec_2', 'NED Dec')
+                ALMAnedResults.rename_column('Redshift', 'NED Redshift')
 
                 # mark flags if spw is on line (initialized to False)
                 lineObserved = np.zeros((len(ALMAnedResults), len(restFreqs)),
