@@ -321,6 +321,9 @@ class archiveSearch:
             msg = '"frequency" cannot be passed to runQueriesWithLines'
             raise ValueError(msg)
 
+        if (len(line_names) != len(restFreqs)) and (line_names != ""):
+                raise TypeError('line_names: expecting either empty string [default] or list of strings that is length={:}'.format(len(restFreqs)))
+
         restFreqs = np.array(restFreqs)
         restFreqs.sort()
 
@@ -417,8 +420,6 @@ class archiveSearch:
 
                     if line_names == "":
                         line_names = ['Line{:}'.format(i) for i in range(len(restFreqs))]
-                    elif (len(line_names) != len(restFreqs)) and ():
-                        raise TypeError('line_names must be list of the same length as the number of lines')
 
                     # loop over the target lines, return a boolean flag array and add it to astropy table
                     for j, (observed_frequency, linename) in enumerate(zip(observed_frequencies,line_names)):
