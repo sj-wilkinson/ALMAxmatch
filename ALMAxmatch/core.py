@@ -439,7 +439,7 @@ class archiveSearch:
                 ALMAnedResults.rename_column('RA_1', 'ALMA RA')
                 ALMAnedResults.rename_column('Dec_1', 'ALMA Dec')
                 ALMAnedResults.rename_column('Object Name', 'NED source name')
-                ALMAnedResults.rename_column('RA_22', 'NED RA')
+                ALMAnedResults.rename_column('RA_2', 'NED RA')
                 ALMAnedResults.rename_column('Dec_2', 'NED Dec')
                 ALMAnedResults.rename_column('Redshift', 'NED Redshift')
 
