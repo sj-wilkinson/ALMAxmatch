@@ -441,7 +441,7 @@ class archiveSearch:
                 ALMAnedResults.rename_column('Object Name', 'NED source name')
                 ALMAnedResults.rename_column('RA_2', 'NED RA')
                 ALMAnedResults.rename_column('Dec_2', 'NED Dec')
-                # ALMAnedResults.rename_column('Redshift', 'NED Redshift')
+                ALMAnedResults.rename_column('Redshift', 'NED Redshift')
 
                 # mark flags if spw is on line (initialized to False)
                 lineObserved = np.zeros((len(ALMAnedResults), len(restFreqs)),
@@ -451,10 +451,10 @@ class archiveSearch:
                 for i, row in enumerate(ALMAnedResults):
 
                     # target redshift
-                    z = row['Redshift']
+                    z = row['NED Redshift']
                     
                     # observed frequencies
-                    observed_frequencies = [self._observedFreq(rf, row['Redshift']) for rf in restFreqs]
+                    observed_frequencies = [self._observedFreq(rf, row['NED Redshift']) for rf in restFreqs]
 
                     if line_names == "":
                         line_names = ['Line{:}'.format(i) for i in range(len(restFreqs))]
