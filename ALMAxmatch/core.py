@@ -9,7 +9,7 @@ to do:
 ------
   -factor out ALMA source name sanitation into a private method and run on all
    query result tables
-  -remove hard-coded public=False and science=False from runQueries
+  -remove hard-coded public=False and science=False from runTargetQuery
     -maybe the queries could always retrieve all data but we store an internal
      flag specifying those options so you can change your mind later and just
      flip the flag(s) to whatever you want
@@ -102,10 +102,10 @@ class archiveSearch:
             raise TypeError('Cannot work with targets '
                             +'of type {:}'.format(targetType))
 
-    def runQueries(self, public=False, science=False, **kwargs):
+    def runTargetQuery(self, public=False, science=False, **kwargs):
         """Run queries on list of targets saved in archiveSearch object.
 
-        Loops through the list of targets or regions and runs
+        Loops through the list of target names or regions and runs
         astroquery.alma.query_object[region] on each. The results are stored in
         the list archiveSearch.queryResults.
 
@@ -322,7 +322,7 @@ class archiveSearch:
         else:
             return False
 
-    def runQueriesWithLines(self, restFreqs, redshiftRange=(0, 1000), line_names="", **kwargs):
+    def runTargetQueryWithLines(self, restFreqs, redshiftRange=(0, 1000), line_names="", **kwargs):
         """Run queries for spectral lines on targets saved in archiveSearch object.
 
         Parameters
@@ -355,7 +355,7 @@ class archiveSearch:
         observations that match a NED object name but do not have a redshift.
         """
         if 'frequency' in kwargs:
-            msg = '"frequency" cannot be passed to runQueriesWithLines'
+            msg = '"frequency" cannot be passed to runTargetQueryWithLines'
             raise ValueError(msg)
 
         if (len(line_names) != len(restFreqs)) and (line_names != ""):
@@ -372,7 +372,7 @@ class archiveSearch:
         highFreq = self._observedFreq(restFreqs[-1], redshiftRange[0])
         freqLimits = '{:} .. {:}'.format(lowFreq, highFreq)
 
-        self.runQueries(frequency=freqLimits, **kwargs)
+        self.runTargetQuery(frequency=freqLimits, **kwargs)
 
         self.parseFrequencyRanges()
 
@@ -439,7 +439,7 @@ class archiveSearch:
                 ALMAnedResults.rename_column('RA_1', 'ALMA RA')
                 ALMAnedResults.rename_column('Dec_1', 'ALMA Dec')
                 ALMAnedResults.rename_column('Object Name', 'NED source name')
-                ALMAnedResults.rename_column('RA_2', 'NED RA')
+                ALMAnedResults.rename_column('RA_22', 'NED RA')
                 ALMAnedResults.rename_column('Dec_2', 'NED Dec')
                 ALMAnedResults.rename_column('Redshift', 'NED Redshift')
 
@@ -483,7 +483,7 @@ if __name__ == "__main__":
     if True:
         target = ('12h26m32.1s 12d43m24s', '6deg')
         myarchiveSearch = archiveSearch(target)
-        mySurvey.runQueriesWithLines([113.123337, 230.538],
+        mySurvey.runTargetQueryWithLines([113.123337, 230.538],
                                      redshiftRange=(0, 0.1),
                                      science=True)
         print(len(mySurvey.queryResults['coord=12h26m32.1s 12d43m24s radius=6deg']))
@@ -494,7 +494,7 @@ if __name__ == "__main__":
     if False:
         target = ('12h26m32.1s 12d43m24s', '30arcmin')
         mySurvey = survey(target)
-        mySurvey.runQueries()
+        mySurvey.runTargetQuery()
         #mySurvey.observedBands()
         #mySurvey.parseFrequencyRanges()
         mySurvey.printQueryResults()
@@ -506,7 +506,7 @@ if __name__ == "__main__":
         print("--------------")
 
         mySurvey = survey(targets)
-        mySurvey.runQueries()
+        mySurvey.runTargetQuery()
         mySurvey.observedBands()
         mySurvey.parseFrequencyRanges()
         print(mySurvey.targets)
