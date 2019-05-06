@@ -467,7 +467,7 @@ class archiveSearch:
                     # observed frequencies
                     observed_frequencies = [self._observedFreq(rf, row['NED Redshift']) for rf in restFreqs]
 
-                    if lineNames == 0:
+                    if len(lineNames) == 0:
                         lineNames = ['Line{:}'.format(i) for i in range(len(restFreqs))]
 
                     # loop over the target lines, return a boolean flag array and add it to astropy table
