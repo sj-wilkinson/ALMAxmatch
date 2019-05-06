@@ -101,7 +101,9 @@ class archiveSearch:
         self._convertDateColumnsToDatetime()
 
 
-    def runPayloadQueryWithLines(self, restFreqs, payload=None, redshiftRange=(0, 1000), line_names="", **kwargs):
+    def runPayloadQueryWithLines(self, restFreqs, payload=None,
+                                 redshiftRange=(0, 1000), lineNames=[],
+                                 **kwargs):
         """
         Run queries for spectral lines on targets saved in archiveSearch object.
         Parameters
@@ -110,6 +112,11 @@ class archiveSearch:
             Dictionary of additional keywords.  See `help`.
         redshift_range : list
             list containing upper and lower redshift range to search
+        lineNames : sequence of str, optional
+            A sequence of strings containing names for each spectral line to
+            be searched for that will be used as column names in the results
+            table. This must be the same length as restFreqs. Default is to
+            name lines as "Line0", "Line1", "Line2", etc.
         public : bool
             Return only publicly available datasets?
         science : bool
@@ -125,7 +132,7 @@ class archiveSearch:
             Default is to search from z=0 to 1000 (i.e. all redshifts).
 
         All arguments are passed to astroquery.alma.Alma.query except
-        redshiftRange, which cannot be specified here since it is used to limit 
+        frequency, which cannot be specified here since it is used to limit 
         the query to frequencies that could contain the lines in the specified
         redshift range.
 
@@ -145,8 +152,12 @@ class archiveSearch:
             msg = '"frequency" cannot be passed to runPayloadQueryWithLines'
             raise ValueError(msg)
 
-        if (len(line_names) != len(restFreqs)) and (line_names != ""):
-                raise TypeError('line_names: expecting either empty string [default] or list of strings that is length={:}'.format(len(restFreqs)))
+        lineNames = np.array(lineNames)
+        if (len(lineNames) != len(restFreqs) and len(lineNames) != 0):
+            msg = 'length mismatch between '
+            msg += '"restFreqs" ({:}) '.format(len(restFreqs))
+            msg += 'and "lineNames" ({:})'.format(len(lineNames))
+            raise ValueError(msg)
 
         restFreqs = np.array(restFreqs)
 
@@ -253,23 +264,23 @@ class archiveSearch:
             # observed frequencies
             observed_frequencies = [self._observedFreq(rf, row['NED Redshift']) for rf in restFreqs]
 
-            if line_names == "":
-                line_names = ['Line{:}'.format(i) for i in range(len(restFreqs))]
+            if len(lineNames) == 0:
+                lineNames = ['Line{:}'.format(i) for i in range(len(restFreqs))]
 
             # loop over the target lines, return a boolean flag array and add it to astropy table
-            for j, (observed_frequency, linename) in enumerate(zip(observed_frequencies,line_names)):
+            for j, (observed_frequency, linename) in enumerate(zip(observed_frequencies,lineNames)):
                 lineObserved[i, j]=self._lineObserved(target_frequency=observed_frequency
                                                             , observed_frequency_ranges=row['Frequency ranges']
                                                             , linename=linename)
 
         # add flag columns to array
         for i in range(len(restFreqs)):
-                    ALMAnedResults[line_names[i]] = lineObserved[:, i]
+                    ALMAnedResults[lineNames[i]] = lineObserved[:, i]
 
         # remove rows which have no lines covered
-        lineCount = np.array(ALMAnedResults[line_names[0]], dtype=int)
+        lineCount = np.array(ALMAnedResults[lineNames[0]], dtype=int)
         for i in range(1, len(restFreqs)):
-            lineCount += np.array(ALMAnedResults[line_names[i]], dtype=int)
+            lineCount += np.array(ALMAnedResults[lineNames[i]], dtype=int)
         noLinesInds = np.where(lineCount == 0)
         ALMAnedResults.remove_rows(noLinesInds)
 
@@ -312,7 +323,8 @@ class archiveSearch:
             self.targets.pop(key)
         self._convertDateColumnsToDatetime()
 
-    def runTargetQueryWithLines(self, restFreqs, redshiftRange=(0, 1000), line_names="", **kwargs):
+    def runTargetQueryWithLines(self, restFreqs, redshiftRange=(0, 1000),
+                                lineNames=[], **kwargs):
         """Run queries for spectral lines on targets saved in archiveSearch object.
 
         Parameters
@@ -327,6 +339,12 @@ class archiveSearch:
             restFreqs will be shifted using this range to only find 
             observations that have spectral coverage in that redshift range. 
             Default is to search from z=0 to 1000 (i.e. all redshifts).
+
+        lineNames : sequence of str, optional
+            A sequence of strings containing names for each spectral line to
+            be searched for that will be used as column names in the results
+            table. This must be the same length as restFreqs. Default is to
+            name lines as "Line0", "Line1", "Line2", etc.
 
         All arguments are passed to astroquery.alma.Alma.query except
         frequency, which cannot be specified here since it is used to limit 
@@ -348,8 +366,12 @@ class archiveSearch:
             msg = '"frequency" cannot be passed to runTargetQueryWithLines'
             raise ValueError(msg)
 
-        if (len(line_names) != len(restFreqs)) and (line_names != ""):
-            raise TypeError('line_names: expecting either empty string [default] or list of strings that is length={:}'.format(len(restFreqs)))
+        lineNames = np.array(lineNames)
+        if (len(lineNames) != len(restFreqs) and len(lineNames) != 0):
+            msg = 'length mismatch between '
+            msg += '"restFreqs" ({:})'.format(len(restFreqs))
+            msg += ' and "lineNames" ({:})'.format(len(lineNames))
+            raise ValueError(msg)
 
         restFreqs = np.array(restFreqs)
 
@@ -445,22 +467,22 @@ class archiveSearch:
                     # observed frequencies
                     observed_frequencies = [self._observedFreq(rf, row['NED Redshift']) for rf in restFreqs]
 
-                    if line_names == "":
-                        line_names = ['Line{:}'.format(i) for i in range(len(restFreqs))]
+                    if lineNames == 0:
+                        lineNames = ['Line{:}'.format(i) for i in range(len(restFreqs))]
 
                     # loop over the target lines, return a boolean flag array and add it to astropy table
-                    for j, (observed_frequency, linename) in enumerate(zip(observed_frequencies,line_names)):
+                    for j, (observed_frequency, linename) in enumerate(zip(observed_frequencies,lineNames)):
                         lineObserved[i, j]=self._lineObserved(target_frequency=observed_frequency
                                                                     , observed_frequency_ranges=row['Frequency ranges']
                                                                     , linename=linename)
 
                 for i in range(len(restFreqs)):
-                    ALMAnedResults[line_names[i]] = lineObserved[:, i]
+                    ALMAnedResults[lineNames[i]] = lineObserved[:, i]
 
                 # remove rows which have no lines covered
-                lineCount = np.array(ALMAnedResults[line_names[0]], dtype=int)
+                lineCount = np.array(ALMAnedResults[lineNames[0]], dtype=int)
                 for i in range(1, len(restFreqs)):
-                    lineCount += np.array(ALMAnedResults[line_names[i]], dtype=int)
+                    lineCount += np.array(ALMAnedResults[lineNames[i]], dtype=int)
                 noLinesInds = np.where(lineCount == 0)
                 ALMAnedResults.remove_rows(noLinesInds)
 
