@@ -149,14 +149,13 @@ class archiveSearch:
                 raise TypeError('line_names: expecting either empty string [default] or list of strings that is length={:}'.format(len(restFreqs)))
 
         restFreqs = np.array(restFreqs)
-        restFreqs.sort()
 
         redshiftRange = np.array(redshiftRange)
         redshiftRange.sort()
 
         # define frequency range from lines and redshifts
-        lowFreq = self._observedFreq(restFreqs[0], redshiftRange[1])
-        highFreq = self._observedFreq(restFreqs[-1], redshiftRange[0])
+        lowFreq = self._observedFreq(np.sort(restFreqs)[0], redshiftRange[1])
+        highFreq = self._observedFreq(np.sort(restFreqs)[-1], redshiftRange[0])
         freqLimits = '{:} .. {:}'.format(lowFreq, highFreq)
 
 
@@ -350,17 +349,16 @@ class archiveSearch:
             raise ValueError(msg)
 
         if (len(line_names) != len(restFreqs)) and (line_names != ""):
-                raise TypeError('line_names: expecting either empty string [default] or list of strings that is length={:}'.format(len(restFreqs)))
+            raise TypeError('line_names: expecting either empty string [default] or list of strings that is length={:}'.format(len(restFreqs)))
 
         restFreqs = np.array(restFreqs)
-        restFreqs.sort()
 
         redshiftRange = np.array(redshiftRange)
         redshiftRange.sort()
 
         # define frequency range from lines and redshifts
-        lowFreq = self._observedFreq(restFreqs[0], redshiftRange[1])
-        highFreq = self._observedFreq(restFreqs[-1], redshiftRange[0])
+        lowFreq = self._observedFreq(np.sort(restFreqs)[0], redshiftRange[1])
+        highFreq = self._observedFreq(np.sort(restFreqs)[-1], redshiftRange[0])
         freqLimits = '{:} .. {:}'.format(lowFreq, highFreq)
 
         self.runTargetQuery(frequency=freqLimits, **kwargs)
