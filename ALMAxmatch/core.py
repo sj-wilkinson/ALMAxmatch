@@ -56,16 +56,45 @@ if (not os.environ.get('PYTHONHTTPSVERIFY', '') and
 now = np.datetime64('now')
 
 class archiveSearch:
+    """ALMA archive search with cross matching against NED.
+
+    Parameters
+    ----------
+    targets : array_like, optional
+        A sequence of strings containing source names and/or tuples specifying
+        regions with which to query the ALMA archive. Region tuples must
+        consist of (coordinates, radius) where the coordinates element can be
+        either a string or an astropy.coordinates object and the radius element
+        can be either a string or an astropy.units.Quantity object.
+
+    Attributes
+    ----------
+    targets : array_like
+        See parameter description.
+    queryResults : dict
+        Results from querying the ALMA archive, with the targets queried as the
+        keys and astropy tables containing the observation information as the
+        corresponding values. If one of the "WithLines" methods was run, only
+        targets that had matches in NED with redshifts and observations with
+        spectral windows that overlapped the observed frequency of the
+        requested line(s) appear here.
+    queryResultsNoNED : dict
+        Same as queryResults but only containing the targets that had data in
+        the ALMA archive but did not have a match in NED.
+    queryResultsNoNEDz : dict
+        Same as queryResults but only containing the targets that had data in
+        the ALMA archive and matched a source in NED but NED had no redshift
+        information.
+    uniqueBands : dict
+        The unique bands in query results organized with each queried target
+        as keys and the unique bands the corresponding values. The bands are
+        stored in astropy.table.column objects.
+    isObjectQuery : dict
+        Booleans that indicate whether each queried target is a source name
+        (True) or a region (False). Targets are the keys and the boolean flags
+        are the values.
     """
-    Data attributes:
-    ----------------
-    -targets
-    -queryResults
-    -queryResultsNoNED
-    -queryResultsNoNEDz
-    -uniqueBands
-    -isObjectQuery
-    """
+
     def __init__(self, targets=None):
         self.targets = dict()
         self.isObjectQuery = dict()
@@ -78,6 +107,8 @@ class archiveSearch:
         self.queryResults = None
         self.queryResultsNoNED = None
         self.queryResultsNoNEDz = None
+
+        self.uniqueBands = None
 
     def runPayloadQuery(self, payload, **kwargs):
         """
@@ -517,10 +548,15 @@ class archiveSearch:
     def addTarget(self, target):
         """Add target to object's dictionary of targets.
 
-        Will accept a string indicating a target name or a tuple of
-        (coordinates, radius) indicating a region to search. Tuple entries can
-        be either strings or an astropy.coordinates object for the coordinates
-        entry and an astropy.units.Quantity object for the radius entry.
+        Parameters
+        ----------
+        target : str or tuple
+            Target to query the ALMA archive for. Can be either a string
+            indicating a source name (e.g. 'M87') or a tuple indicating a
+            region to search consisting of (coordinates, radius). The
+            coordinates element can be either a string or an
+            astropy.coordinates object and the radius element can be either a
+            string or an astropy.units.Quantity object.
         """
         targetType = type(target)
         if targetType == str:
@@ -629,62 +665,71 @@ class archiveSearch:
             print("PUBLIC:  Number of rows: {0}.  Unique pointings: {1}".format(pubrows, len(unique_public_circle_parameters[band])))
             print("PRIVATE: Number of rows: {0}.  Unique pointings: {1}".format(privrows, len(unique_private_circle_parameters[band])))
 
-    def printQueryResults(self, max_lines=None, max_width=None, show_name=True,
-                          show_unit=None, show_dtype=False, align=None):
+    def printQueryResults(self, **kwargs)
         """Print formatted string representation of the query result table(s).
 
-        This method directly pipes its arguments into the
-        astropy.table.Table.pprint method, so please see the documentation for
-        that method for descriptions of each argument. If multiple fields were
-        queried then this method will loop over each field, running pprint for
-        the corresponding results table.
+        Parameters
+        ----------
+        kwargs : dict
+            Passed to `astropy.table.Table.pprint`
+
+        If multiple fields were queried then this method will loop over each
+        field, running pprint for the corresponding results table.
         """
         for target in self.targets:
             print(target)
-            self.queryResults[target].pprint(max_lines=max_lines,
-                                             max_width=max_width,
-                                             show_name=show_name,
-                                             show_unit=show_unit,
-                                             show_dtype=show_dtype,
-                                             align=align)
+            self.queryResults[target].pprint(**kwargs)
             print('\n\n')
 
-    def formatQueryResults(self, max_lines=None, max_width=None,
-                           show_name=True, show_unit=None, show_dtype=False,
-                           html=False, tableid=None, align=None,
-                           tableclass=None):
+    def formatQueryResults(self, **kwargs):
         """Return a list of lines for the formatted string representation of
         the query result table(s).
 
-        This method directly pipes its arguments into the
-        astropy.table.Table.pformat method, so please see the documentation for
-        that method for descriptions of each argument. If multiple fields were
-        queried then this method will loop over each field, running pformat for
-        the corresponding results table.
+        Parameters
+        ----------
+        kwargs : dict
+            Passed to `astropy.table.Table.pformat`
+
+        If multiple fields were queried then this method will loop over each
+        field, running pformat for the corresponding results table.
         """
         lines = list()
         for target in self.targets:
             lines.append(target)
-            lines.extend(self.queryResults[target].pformat(max_lines=max_lines,
-                                                           max_width=max_width,
-                                                           show_name=show_name,
-                                                           show_unit=show_unit,
-                                                         show_dtype=show_dtype,
-                                                           html=html,
-                                                           tableid=tableid,
-                                                           align=align,
-                                                        tableclass=tableclass))
+            lines.extend(self.queryResults[target].pformat(**kwargs))
             lines.append('')
             lines.append('')
         return lines
         
     def _observedFreq(self, restFreq, z):
-        """Return observed frequency according to nu_0 / nu = 1 + z."""
+        """Return observed frequency according to nu_0 / nu = 1 + z.
+
+        Parameters
+        ----------
+        restFreq : float
+            Rest frequency of line to calculate observed frequency for.
+        z : float
+            Redshift of observed object.
+        """
         return restFreq/(1+z)
 
     def _lineObserved(self, target_frequency, observed_frequency_ranges, linename=""):
         """Loop through the observed spectral windows to check if 
-            target_frequency is covered by spectral setup"""
+            target_frequency is covered by spectral setup
+
+        Parameters
+        ----------
+        target_frequency : float
+            Spectral line frequency to check for within
+            observed_frequency_ranges.
+        observed_frequency_ranges : array_like
+            A sequence of two-element sequences
+            [(low freq1, high freq1), (low freq2, high freq2), ...] that
+            define frequency ranges that are checked whether they contain
+            target_frequency.
+        linename : str, optional
+            A name for the target_frequency feature used in printing.
+        """
         
         # Initialize boolean line observed flag array (i.e., True = line frequency in archive spw coverage)
         lineObserved = []
