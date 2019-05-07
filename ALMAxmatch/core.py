@@ -81,11 +81,13 @@ class archiveSearch:
 
     def runPayloadQuery(self, payload, **kwargs):
         """
-        Query the archive with a payload
+        Perform a generic query with user-specified payload.
         Parameters
         ----------
         payload : dict
-            Dictionary of additional keywords.  See `help`.
+            A dictionary of payload keywords that are accepted by the ALMA
+            archive system. You can look these up by examining the forms at
+            http://almascience.org/aq. Passed to `astroquery.alma.Alma.query`.
         public : bool
             Return only publicly available datasets?
         science : bool
@@ -108,10 +110,18 @@ class archiveSearch:
         Run queries for spectral lines on targets saved in archiveSearch object.
         Parameters
         ----------
+        restFreqs : array_like
+            The spectral line rest frequencies to search the query results for
         payload : dict
-            Dictionary of additional keywords.  See `help`.
-        redshift_range : list
-            list containing upper and lower redshift range to search
+            A dictionary of payload keywords that are accepted by the ALMA
+            archive system. You can look these up by examining the forms at
+            http://almascience.org/aq. Passed to `astroquery.alma.Alma.query`.
+        redshiftRange : 2 element array_like (lowz, highz), optional
+            A 2-element sequence defining the lower and upper limits of the
+            object redshifts (in that order) to be searched for. The restFreqs
+            will be shifted using this range to only find observations that
+            have spectral coverage in that redshift range. Default is to search
+            0 <= z <= 1000 (i.e. all redshifts).
         lineNames : sequence of str, optional
             A sequence of strings containing names for each spectral line to
             be searched for that will be used as column names in the results
@@ -123,13 +133,6 @@ class archiveSearch:
             Return only data marked as "science" in the archive?
         kwargs : dict
             Passed to `astroquery.alma.Alma.query`
-
-        redshiftRange : 2 element array_like (lowz, highz), optional
-            A 2-element list, tuple, etc. defining the lower and upper limits
-            of the object redshifts (in that order) to be searched for. The 
-            restFreqs will be shifted using this range to only find 
-            observations that have spectral coverage in that redshift range. 
-            Default is to search from z=0 to 1000 (i.e. all redshifts).
 
         All arguments are passed to astroquery.alma.Alma.query except
         frequency, which cannot be specified here since it is used to limit 
@@ -290,6 +293,19 @@ class archiveSearch:
     def runTargetQuery(self, public=False, science=False, **kwargs):
         """Run queries on list of targets saved in archiveSearch object.
 
+        Parameters
+        ----------
+
+        public : bool
+            Return only publicly available datasets?
+
+        science : bool
+            Return only data marked as "science" in the archive?
+
+        kwargs : dict
+            Passed to `astroquery.alma.Alma.query_object` or
+            `astroquery.alma.Alma.query_region`
+
         Loops through the list of target names or regions and runs
         astroquery.alma.query_object[region] on each. The results are stored in
         the list archiveSearch.queryResults.
@@ -334,17 +350,27 @@ class archiveSearch:
             The spectral line rest frequencies to search the query results for
 
         redshiftRange : 2 element array_like (lowz, highz), optional
-            A 2-element list, tuple, etc. defining the lower and upper limits
-            of the object redshifts (in that order) to be searched for. The 
-            restFreqs will be shifted using this range to only find 
-            observations that have spectral coverage in that redshift range. 
-            Default is to search from z=0 to 1000 (i.e. all redshifts).
+            A 2-element sequence defining the lower and upper limits of the
+            object redshifts (in that order) to be searched for. The restFreqs
+            will be shifted using this range to only find observations that
+            have spectral coverage in that redshift range. Default is to search
+            0 <= z <= 1000 (i.e. all redshifts).
 
         lineNames : sequence of str, optional
             A sequence of strings containing names for each spectral line to
             be searched for that will be used as column names in the results
             table. This must be the same length as restFreqs. Default is to
             name lines as "Line0", "Line1", "Line2", etc.
+
+        public : bool
+            Return only publicly available datasets?
+
+        science : bool
+            Return only data marked as "science" in the archive?
+
+        kwargs : dict
+            Passed to `astroquery.alma.Alma.query_object` or
+            `astroquery.alma.Alma.query_region`
 
         All arguments are passed to astroquery.alma.Alma.query except
         frequency, which cannot be specified here since it is used to limit 
