@@ -37,23 +37,18 @@ to do:
     -search in NED for coords and pass that to ALMA
 """
 
-from astropy import units as u
-from astropy.table import join, setdiff, unique, vstack
+from astropy.table import join, setdiff, vstack
 from astroquery.alma import Alma
 from astroquery.ned import Ned
 from astropy.coordinates import SkyCoord
 import numpy as np
 import string
-import matplotlib.pyplot as plt
 
 # fix Python SSL errors when downloading using the https
 import os, ssl
 if (not os.environ.get('PYTHONHTTPSVERIFY', '') and
     getattr(ssl, '_create_unverified_context', None)): 
     ssl._create_default_https_context = ssl._create_unverified_context
-
-# Today's date (handy for determining public data) 
-now = np.datetime64('now')
 
 class archiveSearch:
     """ALMA archive search with cross matching against NED.
@@ -609,7 +604,8 @@ class archiveSearch:
 
     def dumpSearchResults(self, target_data, bands,
                           unique_public_circle_parameters=False,
-                          unique_private_circle_parameters=False): 
+                          unique_private_circle_parameters=False):
+        now = np.datetime64('now')
         print("Total observations: {0}".format(len(target_data)))
         print( "Unique bands: ", bands)
         for band in bands:
@@ -619,7 +615,7 @@ class archiveSearch:
             print("PUBLIC:  Number of rows: {0}.  Unique pointings: {1}".format(pubrows, len(unique_public_circle_parameters[band])))
             print("PRIVATE: Number of rows: {0}.  Unique pointings: {1}".format(privrows, len(unique_private_circle_parameters[band])))
 
-    def printQueryResults(self, **kwargs)
+    def printQueryResults(self, **kwargs):
         """Print formatted string representation of the query result table(s).
 
         Parameters
