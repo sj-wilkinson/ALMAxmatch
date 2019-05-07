@@ -283,9 +283,8 @@ class archiveSearch:
 
             # loop over the target lines, return a boolean flag array and add it to astropy table
             for j, (observed_frequency, linename) in enumerate(zip(observed_frequencies,lineNames)):
-                lineObserved[i, j]=self._lineObserved(target_frequency=observed_frequency
-                                                            , observed_frequency_ranges=row['Frequency ranges']
-                                                            , linename=linename)
+                lineObserved[i, j]=self._lineObserved(lineFreq=observed_frequency
+                                                            , spwFreqLims=row['Frequency ranges'])
 
         # add flag columns to array
         for i in range(len(restFreqs)):
@@ -482,9 +481,8 @@ class archiveSearch:
 
                     # loop over the target lines, return a boolean flag array and add it to astropy table
                     for j, (observed_frequency, linename) in enumerate(zip(observed_frequencies,lineNames)):
-                        lineObserved[i, j]=self._lineObserved(target_frequency=observed_frequency
-                                                                    , observed_frequency_ranges=row['Frequency ranges']
-                                                                    , linename=linename)
+                        lineObserved[i, j]=self._lineObserved(lineFreq=observed_frequency
+                                                                    , spwFreqLims=row['Frequency ranges'])
 
                 for i in range(len(restFreqs)):
                     ALMAnedResults[lineNames[i]] = lineObserved[:, i]
@@ -673,46 +671,33 @@ class archiveSearch:
         """
         return restFreq/(1+z)
 
-    def _lineObserved(self, target_frequency, observed_frequency_ranges, linename=""):
+    def _lineObserved(self, lineFreq, spwFreqLims):
         """Return whether target frequency lies within frequency ranges.
 
         Parameters
         ----------
-        target_frequency : float
-            Spectral line frequency to check for within
-            observed_frequency_ranges.
-        observed_frequency_ranges : array_like
+        lineFreq : float
+            Spectral line frequency to check for within `spwFreqLims`.
+        spwFreqLims : array_like
             A sequence of two-element sequences
             [(low freq1, high freq1), (low freq2, high freq2), ...] that
             define frequency ranges that are checked whether they contain
-            target_frequency.
-        linename : str, optional
-            A name for the target_frequency feature used in printing.
+            `lineFreq`.
 
         Returns
         -------
-        list of bool
-            Flags specifying whether `target_frequency` lies within each
-            frequency range in `observed_frequency_ranges`.
+        bool
+            Whether `lineFreq` lies within any frequency range in
+            `spwFreqLims`.
         """
-        # Initialize boolean line observed flag array (i.e., True = line frequency in archive spw coverage)
-        lineObserved = []
-        
-        # loop over spectral window frequencies for each observation
-        for spw in observed_frequency_ranges:
-            # if observed frequency is in spw, flag as True and break inner loop (move on to next observation) 
-            if spw[0] <= target_frequency <= spw[-1]:
-                print(linename,"observed frequency", target_frequency, "GHz",
-                          "in range", spw[0], "-", spw[-1])
-                lineObserved.append(True) # line IS observed
-            else:
-                lineObserved.append(False) # line NOT observed
-            
-        # Boolean line observed flag for each observation 
-        if True in lineObserved:
-            return True
-        else:
-            return False
+        lineObserved = False
+
+        for spw in spwFreqLims:
+            if spw[0] <= lineFreq <= spw[1]:
+                lineObserved = True
+                break
+
+        return lineObserved
 
 
 if __name__ == "__main__":
