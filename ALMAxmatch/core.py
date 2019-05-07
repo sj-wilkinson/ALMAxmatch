@@ -88,22 +88,28 @@ class archiveSearch:
         Booleans that indicate whether each queried target is a source name
         (True) or a region (False). Targets are the keys and the boolean flags
         are the values.
+    invalidName : list strs
+        List of source name strings specifying targets that did not return any
+        results from the ALMA archive query.
     """
 
     def __init__(self, targets=None):
-        self.targets = dict()
         self.isObjectQuery = dict()
+
+        self.targets = dict()
         if type(targets) is list:
             for i in range(len(targets)):
                 self.addTarget(targets[i])
         elif targets != None:
             self.addTarget(targets)
 
-        self.queryResults = None
-        self.queryResultsNoNED = None
-        self.queryResultsNoNEDz = None
+        self.invalidName = list()
 
-        self.uniqueBands = None
+        self.queryResults = dict()
+        self.queryResultsNoNED = dict()
+        self.queryResultsNoNEDz = dict()
+
+        self.uniqueBands = dict()
 
     def runPayloadQuery(self, payload, **kwargs):
         """Perform a generic ALMA archive query with user-specified payload.
@@ -121,8 +127,6 @@ class archiveSearch:
         kwargs : dict
             Passed to `astroquery.alma.Alma.query`.
         """
-        self.invalidName=list()
-
         results = Alma.query(payload, **kwargs)
         self.queryResults = results
         self._convertDateColumnsToDatetime()
@@ -192,9 +196,6 @@ class archiveSearch:
         self.runPayloadQuery(payload=payload, **kwargs)
 
         self.parseFrequencyRanges() # THIS NEEDS FIXING.
-
-        # self.queryResultsNoNED = dict()
-        # self.queryResultsNoNEDz = dict()
 
         # sanitize ALMA source names
         safeNames = self.queryResults['Source name']
@@ -318,8 +319,6 @@ class archiveSearch:
           * converting the 'Release' and 'Observation' data columns from
             strings to np.datetime64 objects
         """
-        self.queryResults = dict()
-        self.invalidName=list()
         for target in self.targets:
             if self.isObjectQuery[target] == True: # for individual sources
                 try: 
@@ -395,9 +394,6 @@ class archiveSearch:
         self.runTargetQuery(frequency=freqLimits, **kwargs)
 
         self.parseFrequencyRanges()
-
-        self.queryResultsNoNED = dict()
-        self.queryResultsNoNEDz = dict()
 
         for target in self.targets:
             if len(self.queryResults[target])>0: # only do this for targets with ALMA results
@@ -544,7 +540,6 @@ class archiveSearch:
     def observedBands(self):
         """Save unique bands into archiveSearch object.
         """
-        self.uniqueBands = dict()
         for tar in self.targets:
             self.uniqueBands[tar] = np.unique(self.queryResults[tar]['Band'])
 
