@@ -61,8 +61,8 @@ class archiveSearch:
     Parameters
     ----------
     targets : array_like, optional
-        A sequence of strings containing source names and/or tuples specifying
-        regions with which to query the ALMA archive. Region tuples must
+        A sequence of strings and/or tuples specifying source names and regions
+        with which to query the ALMA archive, respectively. Region tuples must
         consist of (coordinates, radius) where the coordinates element can be
         either a string or an astropy.coordinates object and the radius element
         can be either a string or an astropy.units.Quantity object.
@@ -75,9 +75,9 @@ class archiveSearch:
         Results from querying the ALMA archive, with the targets queried as the
         keys and astropy tables containing the observation information as the
         corresponding values. If one of the "WithLines" methods was run, only
-        targets that had matches in NED with redshifts and observations with
-        spectral windows that overlapped the observed frequency of the
-        requested line(s) appear here.
+        targets that with ALMA observations containing spectral windows that
+        overlapped the requested line(s) and had matches in NED with redshifts
+        appear here.
     queryResultsNoNED : dict
         Same as queryResults but only containing the targets that had data in
         the ALMA archive but did not have a match in NED.
@@ -87,7 +87,7 @@ class archiveSearch:
         information.
     uniqueBands : dict
         The unique bands in query results organized with each queried target
-        as keys and the unique bands the corresponding values. The bands are
+        as keys and the unique bands as the corresponding values. The bands are
         stored in astropy.table.column objects.
     isObjectQuery : dict
         Booleans that indicate whether each queried target is a source name
@@ -111,8 +111,8 @@ class archiveSearch:
         self.uniqueBands = None
 
     def runPayloadQuery(self, payload, **kwargs):
-        """
-        Perform a generic query with user-specified payload.
+        """Perform a generic ALMA archive query with user-specified payload.
+
         Parameters
         ----------
         payload : dict
@@ -124,9 +124,8 @@ class archiveSearch:
         science : bool
             Return only data marked as "science" in the archive?
         kwargs : dict
-            Passed to `astroquery.alma.Alma.query`
+            Passed to `astroquery.alma.Alma.query`.
         """
-
         self.invalidName=list()
 
         results = Alma.query(payload, **kwargs)
@@ -137,51 +136,37 @@ class archiveSearch:
     def runPayloadQueryWithLines(self, restFreqs, payload=None,
                                  redshiftRange=(0, 1000), lineNames=[],
                                  **kwargs):
-        """
-        Run queries for spectral lines on targets saved in archiveSearch object.
+        """Run query for spectral lines with user-specified payload.
+
         Parameters
         ----------
-        restFreqs : array_like
-            The spectral line rest frequencies to search the query results for
+        restFreqs : sequence of floats
+            The spectral line rest frequencies to search the query results for.
         payload : dict
             A dictionary of payload keywords that are accepted by the ALMA
             archive system. You can look these up by examining the forms at
             http://almascience.org/aq. Passed to `astroquery.alma.Alma.query`.
-        redshiftRange : 2 element array_like (lowz, highz), optional
-            A 2-element sequence defining the lower and upper limits of the
+        redshiftRange : sequence of floats, optional
+            A two-element sequence defining the lower and upper limits of the
             object redshifts (in that order) to be searched for. The restFreqs
             will be shifted using this range to only find observations that
             have spectral coverage in that redshift range. Default is to search
             0 <= z <= 1000 (i.e. all redshifts).
-        lineNames : sequence of str, optional
+        lineNames : sequence of strs, optional
             A sequence of strings containing names for each spectral line to
             be searched for that will be used as column names in the results
             table. This must be the same length as restFreqs. Default is to
-            name lines as "Line0", "Line1", "Line2", etc.
+            name lines like "Line0", "Line1", "Line2", etc.
         public : bool
             Return only publicly available datasets?
         science : bool
             Return only data marked as "science" in the archive?
         kwargs : dict
-            Passed to `astroquery.alma.Alma.query`
-
-        All arguments are passed to astroquery.alma.Alma.query except
-        frequency, which cannot be specified here since it is used to limit 
-        the query to frequencies that could contain the lines in the specified
-        redshift range.
-
-        archiveSearch.queryResults will contain an astropy table with all observations
-        that match a NED object name and have a redshift, with flags for each
-        line specifying if the spectral coverage includes the line frequency for
-        the object's redshift.
-
-        archiveSearch.queryResultsNoNED will contain an astropy table with all
-        observations that did not have a match in NED, based on name.
-
-        archiveSearch.queryResultsNoNEDz will contain an astropy table with all
-        observations that match a NED object name but do not have a redshift.
+            Passed to `astroquery.alma.Alma.query` except frequency, which
+            cannot be specified here since it is used to limit the query to
+            frequencies that could contain the lines in the specified redshift
+            range.
         """
-
         if 'frequency' in kwargs:
             msg = '"frequency" cannot be passed to runPayloadQueryWithLines'
             raise ValueError(msg)
@@ -318,33 +303,26 @@ class archiveSearch:
         noLinesInds = np.where(lineCount == 0)
         ALMAnedResults.remove_rows(noLinesInds)
 
-
         self.queryResults = ALMAnedResults
 
     def runTargetQuery(self, public=False, science=False, **kwargs):
-        """Run queries on list of targets saved in archiveSearch object.
+        """Run queries on list of targets.
 
         Parameters
         ----------
-
         public : bool
             Return only publicly available datasets?
-
         science : bool
             Return only data marked as "science" in the archive?
-
         kwargs : dict
             Passed to `astroquery.alma.Alma.query_object` or
-            `astroquery.alma.Alma.query_region`
+            `astroquery.alma.Alma.query_region`.
 
-        Loops through the list of target names or regions and runs
-        astroquery.alma.query_object[region] on each. The results are stored in
-        the list archiveSearch.queryResults.
+        Also does some work on the result tables to put data into more useful
+        forms. This includes:
 
-        Also does some work on the result tables to put some of their data into
-        more useful forms. This includes:
-          -converting the 'Release' and 'Observation' data columns from strings
-           to np.datetime64 objects
+          * converting the 'Release' and 'Observation' data columns from
+            strings to np.datetime64 objects
         """
         self.queryResults = dict()
         self.invalidName=list()
@@ -372,52 +350,32 @@ class archiveSearch:
 
     def runTargetQueryWithLines(self, restFreqs, redshiftRange=(0, 1000),
                                 lineNames=[], **kwargs):
-        """Run queries for spectral lines on targets saved in archiveSearch object.
+        """Run queries for spectral lines on list of targets.
 
         Parameters
         ----------
-
-        restFreqs : array_like
-            The spectral line rest frequencies to search the query results for
-
-        redshiftRange : 2 element array_like (lowz, highz), optional
-            A 2-element sequence defining the lower and upper limits of the
+        restFreqs : sequence of floats
+            The spectral line rest frequencies to search the query results for.
+        redshiftRange : sequence of floats, optional
+            A two-element sequence defining the lower and upper limits of the
             object redshifts (in that order) to be searched for. The restFreqs
             will be shifted using this range to only find observations that
             have spectral coverage in that redshift range. Default is to search
             0 <= z <= 1000 (i.e. all redshifts).
-
-        lineNames : sequence of str, optional
+        lineNames : sequence of strs, optional
             A sequence of strings containing names for each spectral line to
             be searched for that will be used as column names in the results
             table. This must be the same length as restFreqs. Default is to
-            name lines as "Line0", "Line1", "Line2", etc.
-
+            name lines like "Line0", "Line1", "Line2", etc.
         public : bool
             Return only publicly available datasets?
-
         science : bool
             Return only data marked as "science" in the archive?
-
         kwargs : dict
-            Passed to `astroquery.alma.Alma.query_object` or
-            `astroquery.alma.Alma.query_region`
-
-        All arguments are passed to astroquery.alma.Alma.query except
-        frequency, which cannot be specified here since it is used to limit 
-        the query to frequencies that could contain the lines in the specified
-        redshift range.
-
-        archiveSearch.queryResults will contain an astropy table with all observations
-        that match a NED object name and have a redshift, with flags for each
-        line specifying if the spectral coverage includes the line frequency for
-        the object's redshift.
-
-        archiveSearch.queryResultsNoNED will contain an astropy table with all
-        observations that did not have a match in NED, based on name.
-
-        archiveSearch.queryResultsNoNEDz will contain an astropy table with all
-        observations that match a NED object name but do not have a redshift.
+            Passed to `astroquery.alma.Alma.query_object` except frequency,
+            which cannot be specified here since it is used to limit the query
+            to frequencies that could contain the lines in the specified
+            redshift range.
         """
         if 'frequency' in kwargs:
             msg = '"frequency" cannot be passed to runTargetQueryWithLines'
@@ -546,7 +504,7 @@ class archiveSearch:
                 self.queryResults[target] = ALMAnedResults
 
     def addTarget(self, target):
-        """Add target to object's dictionary of targets.
+        """Add target to archiveSearch object.
 
         Parameters
         ----------
@@ -580,10 +538,6 @@ class archiveSearch:
         query results tables are initially strings. This converts those
         columns, for all targets, into np.datetime64 objects so they are more
         useful.
-
-        The underscore at the beginning of the name indicates this is intended
-        to be used by the archiveSearch object internally so no guarantees are made
-        if you try using it manually.
         """
         for target in self.targets:
             relCol = self.queryResults[target]['Release date']
@@ -605,15 +559,15 @@ class archiveSearch:
         """Parses observed frequency ranges into something more useable.
 
         Loops through the list of targets and then through each query result
-        row pulling out the SPW frequency ranges stored in the query result
-        column 'Frequency support.' A new column is then added to the target
-        query result table called 'Frequency ranges' where lists of astropy
-        quantity 2-tuples are stored that give the maximum and minimum
-        frequency in each SPW for each row (i.e. execution block).
+        row pulling out the spectral window (SPW) frequency ranges stored in
+        the query result column 'Frequency support'. A new column is then added
+        to the target query result table called 'Frequency ranges' where lists
+        of astropy quantity 2-tuples are stored that give the maximum and
+        minimum frequency in each SPW for each row (i.e. execution block).
 
         The new column is easy to read by people and is in a form where math
-        can be done with the frequencies. Each frequency is an astropy
-        float quantity with units.
+        can be done with the frequencies. Each frequency is an astropy float
+        quantity with units.
         """
         if len(self.targets)>=1:    
             for tar in self.targets:
@@ -671,7 +625,7 @@ class archiveSearch:
         Parameters
         ----------
         kwargs : dict
-            Passed to `astropy.table.Table.pprint`
+            Passed to `astropy.table.Table.pprint`.
 
         If multiple fields were queried then this method will loop over each
         field, running pprint for the corresponding results table.
@@ -682,13 +636,18 @@ class archiveSearch:
             print('\n\n')
 
     def formatQueryResults(self, **kwargs):
-        """Return a list of lines for the formatted string representation of
-        the query result table(s).
+        """Return the formatted string form of the query result table(s).
 
         Parameters
         ----------
         kwargs : dict
             Passed to `astropy.table.Table.pformat`
+
+        Returns
+        -------
+        list
+            List of strings containing each line of the formatted string form
+            of the query result table(s).
 
         If multiple fields were queried then this method will loop over each
         field, running pformat for the corresponding results table.
@@ -710,12 +669,16 @@ class archiveSearch:
             Rest frequency of line to calculate observed frequency for.
         z : float
             Redshift of observed object.
+
+        Returns
+        -------
+        float
+            `restFreq` / (1 + `z`)
         """
         return restFreq/(1+z)
 
     def _lineObserved(self, target_frequency, observed_frequency_ranges, linename=""):
-        """Loop through the observed spectral windows to check if 
-            target_frequency is covered by spectral setup
+        """Return whether target frequency lies within frequency ranges.
 
         Parameters
         ----------
@@ -729,8 +692,13 @@ class archiveSearch:
             target_frequency.
         linename : str, optional
             A name for the target_frequency feature used in printing.
+
+        Returns
+        -------
+        list of bool
+            Flags specifying whether `target_frequency` lies within each
+            frequency range in `observed_frequency_ranges`.
         """
-        
         # Initialize boolean line observed flag array (i.e., True = line frequency in archive spw coverage)
         lineObserved = []
         
@@ -749,7 +717,6 @@ class archiveSearch:
             return True
         else:
             return False
-
 
 
 if __name__ == "__main__":
