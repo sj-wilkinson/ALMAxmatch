@@ -40,7 +40,8 @@ to do:
 from astropy.table import join, setdiff, vstack
 from astroquery.alma import Alma
 from astroquery.ned import Ned
-from astropy.coordinates import SkyCoord
+from astroquery.utils import commons
+from astropy.coordinates import SkyCoord, Angle
 import numpy as np
 import string
 
@@ -55,16 +56,25 @@ class archiveSearch:
 
     Parameters
     ----------
-    targets : array_like, optional
-        A sequence of strings and/or tuples specifying source names and regions
-        with which to query the ALMA archive, respectively. Region tuples must
-        consist of (coordinates, radius) where the coordinates element can be
-        either a string or an astropy.coordinates object and the radius element
-        can be either a string or an astropy.units.Quantity object.
+    targets : list of strs and/or lists, optional
+        A list containing strings and/or lists specifying source names and
+        regions with which to query the ALMA archive, respectively. Region
+        lists must consist of [coordinates, radius] where the coordinates
+        element can be either a string or an astropy.coordinates object and the
+        radius element can be either a string or an astropy.units.Quantity
+        object. This is mutually exclusive with the `allSky` argument such that
+        if `allSky` is False then this cannot be None and if `allSky` is True
+        this must be None.
+    allSky : bool, optional
+        If set to True, the archive query will be done over the entire sky
+        (i.e. no source names or regions limiting where on the sky data was
+        taken). This is mutually exclusive with the `targets` argument such
+        that if `targets` is None then this must be True and if `targets` is
+        not None this must be False.
 
     Attributes
     ----------
-    targets : array_like
+    targets : list of strs and/or lists
         See parameter description.
     queryResults : dict
         Results from querying the ALMA archive, with the targets queried as the
@@ -84,24 +94,33 @@ class archiveSearch:
         The unique bands in query results organized with each queried target
         as keys and the unique bands as the corresponding values. The bands are
         stored in astropy.table.column objects.
-    isObjectQuery : dict
-        Booleans that indicate whether each queried target is a source name
-        (True) or a region (False). Targets are the keys and the boolean flags
-        are the values.
-    invalidName : list strs
-        List of source name strings specifying targets that did not return any
+    isObjectQuery : bool or dict
+        When archiveSearch is initialized with the `targets` argument then this
+        is a dictionary of booleans that indicate whether each queried target
+        is a source name (True) or a region (False). Targets are the keys and
+        the boolean flags are the values. When archiveSearch is initialized
+        with the `allSky` argument then this is False.
+    invalidName : list of strs
+        List of target strings specifying targets that did not return any
         results from the ALMA archive query.
     """
 
-    def __init__(self, targets=None):
-        self.isObjectQuery = dict()
+    def __init__(self, targets=None, allSky=False):
+        if ((allSky and targets != None) or (not allSky and targets == None)):
+            msg = 'Only one of either "targets" or "allSky" must be specified.'
+            raise ValueError(msg)
+
+        if allSky:
+            self.isObjectQuery = False
+        else:
+            self.isObjectQuery = dict()
 
         self.targets = dict()
-        if type(targets) is list:
+        if targets != None:
             for i in range(len(targets)):
                 self.addTarget(targets[i])
-        elif targets != None:
-            self.addTarget(targets)
+        else:
+            self.targets['All sky'] = 'All sky'
 
         self.invalidName = list()
 
@@ -111,197 +130,8 @@ class archiveSearch:
 
         self.uniqueBands = dict()
 
-    def runPayloadQuery(self, payload, **kwargs):
-        """Perform a generic ALMA archive query with user-specified payload.
-
-        Parameters
-        ----------
-        payload : dict
-            A dictionary of payload keywords that are accepted by the ALMA
-            archive system. You can look these up by examining the forms at
-            http://almascience.org/aq. Passed to `astroquery.alma.Alma.query`.
-        public : bool
-            Return only publicly available datasets?
-        science : bool
-            Return only data marked as "science" in the archive?
-        kwargs : dict
-            Passed to `astroquery.alma.Alma.query`.
-        """
-        results = Alma.query(payload, **kwargs)
-        self.queryResults = results
-        self._convertDateColumnsToDatetime()
-
-
-    def runPayloadQueryWithLines(self, restFreqs, payload=None,
-                                 redshiftRange=(0, 1000), lineNames=[],
-                                 **kwargs):
-        """Run query for spectral lines with user-specified payload.
-
-        Parameters
-        ----------
-        restFreqs : sequence of floats
-            The spectral line rest frequencies to search the query results for.
-        payload : dict
-            A dictionary of payload keywords that are accepted by the ALMA
-            archive system. You can look these up by examining the forms at
-            http://almascience.org/aq. Passed to `astroquery.alma.Alma.query`.
-        redshiftRange : sequence of floats, optional
-            A two-element sequence defining the lower and upper limits of the
-            object redshifts (in that order) to be searched for. The restFreqs
-            will be shifted using this range to only find observations that
-            have spectral coverage in that redshift range. Default is to search
-            0 <= z <= 1000 (i.e. all redshifts).
-        lineNames : sequence of strs, optional
-            A sequence of strings containing names for each spectral line to
-            be searched for that will be used as column names in the results
-            table. This must be the same length as restFreqs. Default is to
-            name lines like "Line0", "Line1", "Line2", etc.
-        public : bool
-            Return only publicly available datasets?
-        science : bool
-            Return only data marked as "science" in the archive?
-        kwargs : dict
-            Passed to `astroquery.alma.Alma.query` except frequency, which
-            cannot be specified here since it is used to limit the query to
-            frequencies that could contain the lines in the specified redshift
-            range.
-        """
-        if 'frequency' in kwargs:
-            msg = '"frequency" cannot be passed to runPayloadQueryWithLines'
-            raise ValueError(msg)
-
-        lineNames = np.array(lineNames)
-        if (len(lineNames) != len(restFreqs) and len(lineNames) != 0):
-            msg = 'length mismatch between '
-            msg += '"restFreqs" ({:}) '.format(len(restFreqs))
-            msg += 'and "lineNames" ({:})'.format(len(lineNames))
-            raise ValueError(msg)
-
-        restFreqs = np.array(restFreqs)
-
-        redshiftRange = np.array(redshiftRange)
-        redshiftRange.sort()
-
-        # define frequency range from lines and redshifts
-        lowFreq = self._observedFreq(np.sort(restFreqs)[0], redshiftRange[1])
-        highFreq = self._observedFreq(np.sort(restFreqs)[-1], redshiftRange[0])
-        freqLimits = '{:} .. {:}'.format(lowFreq, highFreq)
-
-
-        # ALMA archive keyword payload
-        if payload is None:
-            payload = {}
-        payload['frequency'] = freqLimits
-
-        self.runPayloadQuery(payload=payload, **kwargs)
-
-        self.parseFrequencyRanges() # THIS NEEDS FIXING.
-
-        # sanitize ALMA source names
-        safeNames = self.queryResults['Source name']
-        safeNames = np.char.replace(safeNames, b' ', b'')
-        safeNames = np.char.replace(safeNames, b'_', b'')
-        safeNames = np.char.upper(safeNames)
-        self.queryResults['ALMA sanitized source name'] = safeNames
-
-        uniqueALMAnames = np.unique(self.queryResults['ALMA sanitized source name'])
-
-        # query NED for object redshifts
-        nedResult = list()
-        for sourceName in uniqueALMAnames:
-            try:
-                nedSearch = Ned.query_object(sourceName)
-                nedSearch['ALMA sanitized source name'] = sourceName
-                # doing this prevents vstack warnings
-                nedSearch.meta = None
-                nedResult.append(nedSearch)
-            except Exception:
-                pass
-        nedResult = vstack(nedResult)
-
-        # store rows without matching name in NED
-        queryResultsNoNED = setdiff(self.queryResults, nedResult,
-                                                 keys='ALMA sanitized source name')
-
-        # remove rows without redshifts in NED
-        blankZinds = nedResult['Redshift'].mask.nonzero()
-        blankZnames = nedResult['ALMA sanitized source name'][blankZinds]
-        nedResult.remove_rows(blankZinds)
-
-
-        # store rows with matching name in NED but no z
-        # (this seems like a dumb approach)
-        blankZinds = list()
-        for i,row in enumerate(self.queryResults):
-            if row['ALMA sanitized source name'] in blankZnames:
-                blankZinds.append(i)
-        queryResultsNoNEDz = self.queryResults[blankZinds]
-
-        # remove rows where redshift not in range
-        outofrangeZinds = []
-        for i,row in enumerate(nedResult):
-            if (redshiftRange[0] <= row['Redshift'] <= redshiftRange[1]) == False:
-                outofrangeZinds.append(i)
-        nedResult.remove_rows(outofrangeZinds)
-
-        # rectify this naming difference between NED and ALMA
-        nedResult.rename_column('DEC', 'Dec')
-
-        # keep redshifts, positions too if we wanna check later
-        nedResult.keep_columns(['Object Name', 'RA', 'Dec', 'Redshift',
-                                'ALMA sanitized source name'])
-
-        # generate a human readable, pythonic column of spectral window frequency ranges
-        self.parseFrequencyRanges()
-
-        # join NED redshift table and ALMA archive table based on name
-        ALMAnedResults = join(self.queryResults, nedResult,
-                                keys='ALMA sanitized source name')
-
-        # tidy up column names
-        ALMAnedResults.rename_column('Source name', 'ALMA source name')
-        ALMAnedResults.rename_column('RA_1', 'ALMA RA')
-        ALMAnedResults.rename_column('Dec_1', 'ALMA Dec')
-        ALMAnedResults.rename_column('Object Name', 'NED source name')
-        ALMAnedResults.rename_column('RA_2', 'NED RA')
-        ALMAnedResults.rename_column('Dec_2', 'NED Dec')
-        ALMAnedResults.rename_column('Redshift', 'NED Redshift')
-
-        # mark flags if spw is on line (initialized to False)
-        lineObserved = np.zeros((len(ALMAnedResults), len(restFreqs)),
-                                 dtype=bool)
-
-        for i, row in enumerate(ALMAnedResults):
-
-            # target redshift
-            z = row['NED Redshift']
-
-            # observed frequencies
-            observed_frequencies = [self._observedFreq(rf, row['NED Redshift']) for rf in restFreqs]
-
-            if len(lineNames) == 0:
-                lineNames = ['Line{:}'.format(i) for i in range(len(restFreqs))]
-
-            # loop over the target lines, return a boolean flag array and add it to astropy table
-            for j, (observed_frequency, linename) in enumerate(zip(observed_frequencies,lineNames)):
-                lineObserved[i, j]=self._lineObserved(lineFreq=observed_frequency
-                                                            , spwFreqLims=row['Frequency ranges'])
-
-        # add flag columns to array
-        for i in range(len(restFreqs)):
-                    ALMAnedResults[lineNames[i]] = lineObserved[:, i]
-
-        # remove rows which have no lines covered
-        lineCount = np.array(ALMAnedResults[lineNames[0]], dtype=int)
-        for i in range(1, len(restFreqs)):
-            lineCount += np.array(ALMAnedResults[lineNames[i]], dtype=int)
-        noLinesInds = np.where(lineCount == 0)
-        ALMAnedResults.remove_rows(noLinesInds)
-
-        self.queryResults = ALMAnedResults
-
-    def runTargetQuery(self, public=False, science=False, **kwargs):
-        """Run queries on list of targets.
+    def runQueries(self, public=False, science=False, **kwargs):
+        """Run requested queries.
 
         Parameters
         ----------
@@ -310,8 +140,11 @@ class archiveSearch:
         science : bool
             Return only data marked as "science" in the archive?
         kwargs : dict
-            Passed to `astroquery.alma.Alma.query_object` or
-            `astroquery.alma.Alma.query_region`.
+            Keywords that are accepted by the ALMA archive system. You can look
+            these up by examining the forms at http://almascience.org/aq.
+            Passed to `astroquery.alma.Alma.query`. If archiveSearch was
+            initialized with the `targets` argument then "source_name_resolver"
+            and "ra_dec" cannot be used here.
 
         Also does some work on the result tables to put data into more useful
         forms. This includes:
@@ -319,31 +152,49 @@ class archiveSearch:
           * converting the 'Release' and 'Observation' data columns from
             strings to np.datetime64 objects
         """
-        for target in self.targets:
-            if self.isObjectQuery[target] == True: # for individual sources
+        if self.isObjectQuery == False:
+            payload = dict()
+            self.queryResults['All sky'] = Alma.query(payload,
+                                                      public=public,
+                                                      science=science,
+                                                      **kwargs)
+        else:
+            if 'source_name_resolver' in kwargs:
+                msg = '"source_name_resolver" cannot be used when ' \
+                      + 'archiveSearch is initialized with the "targets" ' \
+                      + 'argument.'
+                raise ValueError(msg)
+
+            if 'ra_dec' in kwargs:
+                msg = '"ra_dec" cannot be used when archiveSearch is ' \
+                      + 'initialized with the "targets" argument.'
+                raise ValueError(msg)
+
+            for target in self.targets:
+                payload = dict()
+                if self.isObjectQuery[target] == True:
+                    payload['source_name_resolver'] = target
+                else:
+                    tarTmp = self.targets[target]
+                    cstr = tarTmp[0].fk5.to_string(style='hmsdms', sep=':')
+                    payload['ra_dec'] = '{:}, {:}'.format(cstr, tarTmp[1].deg)
                 try: 
-                    self.queryResults[target] = Alma.query_object(target,
-                                                                 public=public,
-                                                                 science=science,
-                                                                  **kwargs)
-                    self.isObjectQuery[target] = True
+                    self.queryResults[target] = Alma.query(payload,
+                                                           public=public,
+                                                           science=science,
+                                                           **kwargs)
                 except ValueError:
                     self.invalidName.append(target)
-                    print("Invalid Name '"+target+"'")
-            
-            else: # for querying regions
-                results = Alma.query_region(*self.targets[target],
-                                                public=public,
-                                                science=science,
-                                                **kwargs)
-                self.queryResults[target] = results
-        for key in self.invalidName:
-            self.targets.pop(key)
+                    print('Invalid name "{:}"'.format(target))
+            for key in self.invalidName:
+                self.targets.pop(key)
+
         self._convertDateColumnsToDatetime()
 
-    def runTargetQueryWithLines(self, restFreqs, redshiftRange=(0, 1000),
-                                lineNames=[], **kwargs):
-        """Run queries for spectral lines on list of targets.
+    def runQueriesWithLines(self, restFreqs, redshiftRange=(0, 1000),
+                            lineNames=[], public=False, science=False,
+                            **kwargs):
+        """Run queries for spectral lines.
 
         Parameters
         ----------
@@ -365,13 +216,16 @@ class archiveSearch:
         science : bool
             Return only data marked as "science" in the archive?
         kwargs : dict
-            Passed to `astroquery.alma.Alma.query_object` except frequency,
-            which cannot be specified here since it is used to limit the query
-            to frequencies that could contain the lines in the specified
-            redshift range.
+            Keywords that are accepted by the ALMA archive system. You can look
+            these up by examining the forms at http://almascience.org/aq.
+            Passed to `astroquery.alma.Alma.query`. "frequency" cannot be
+            specified here since it is used to limit the query to frequencies
+            that could contain the lines in the specified redshift range. If
+            archiveSearch was initialized with the `targets` argument then
+            "source_name_resolver" and "ra_dec" also cannot be used here.
         """
         if 'frequency' in kwargs:
-            msg = '"frequency" cannot be passed to runTargetQueryWithLines'
+            msg = '"frequency" cannot be passed to runQueriesWithLines'
             raise ValueError(msg)
 
         lineNames = np.array(lineNames)
@@ -391,7 +245,8 @@ class archiveSearch:
         highFreq = self._observedFreq(np.sort(restFreqs)[-1], redshiftRange[0])
         freqLimits = '{:} .. {:}'.format(lowFreq, highFreq)
 
-        self.runTargetQuery(frequency=freqLimits, **kwargs)
+        self.runQueries(public=public, science=science, frequency=freqLimits,
+                        **kwargs)
 
         self.parseFrequencyRanges()
 
@@ -497,28 +352,35 @@ class archiveSearch:
 
         Parameters
         ----------
-        target : str or tuple
+        target : str or list
             Target to query the ALMA archive for. Can be either a string
-            indicating a source name (e.g. 'M87') or a tuple indicating a
+            indicating a source name (e.g. 'M87') or a list indicating a
             region to search consisting of (coordinates, radius). The
             coordinates element can be either a string or an
             astropy.coordinates object and the radius element can be either a
             string or an astropy.units.Quantity object.
         """
         targetType = type(target)
+
         if targetType == str:
             self.targets[target] = target
             self.isObjectQuery[target] = True
-        elif targetType == tuple:
-            if type(target[0]) == SkyCoord:
-                targetStr = 'coord=({:} {:}) radius={:}'.format(target[0].ra,target[0].dec,target[-1])
-            else:
-                targetStr = 'coord={:} radius={:}'.format(*target)
+        elif targetType == list:
+            if type(target[0]) != SkyCoord:
+                target[0] = commons.parse_coordinates(target[0])
+            if type(target[1]) != Angle:
+                target[1] = Angle(target[1])
+
+            targetStr = 'coord=({:} {:}) radius={:}deg'
+            targetStr = targetStr.format(target[0].ra,
+                                         target[0].dec,
+                                         target[1].deg)
+
             self.targets[targetStr] = target
             self.isObjectQuery[targetStr] = False
         else:
-            raise TypeError('Cannot work with targets '
-                            +'of type {:}'.format(targetType))
+            msg = 'Cannot work with targets of type {:}'.format(targetType)
+            raise TypeError(msg)
 
     def _convertDateColumnsToDatetime(self):
         """Convert archive query result dates to np.datetime64 objects.
@@ -557,31 +419,11 @@ class archiveSearch:
         can be done with the frequencies. Each frequency is an astropy float
         quantity with units.
         """
-        if len(self.targets)>=1:    
-            for tar in self.targets:
-                targetFreqRanges = list()
-                freqUnit = self.queryResults[tar]['Frequency support'].unit
-                for i in range(len(self.queryResults[tar])):
-                    freqStr = self.queryResults[tar]['Frequency support'][i]
-                    freqStr = freqStr.split('U')
-                    rowFreqRanges = list()
-                    for j in range(len(freqStr)):
-                        freqRange = freqStr[j].split(',')
-                        freqRange = freqRange[0].strip(' [')
-                        freqRange = freqRange.split('..')
-                        freqRange[1] = freqRange[1].strip(string.ascii_letters)
-                        freqRange = np.array(freqRange, dtype='float')
-                        rowFreqRanges.append(freqRange)
-                    targetFreqRanges.append(rowFreqRanges)
-                self.queryResults[tar]['Frequency ranges'] = targetFreqRanges
-                self.queryResults[tar]['Frequency ranges'].unit = freqUnit
-        
-        else:
-            """parse frequency ranges for payload query"""
+        for tar in self.targets:
             targetFreqRanges = list()
-            freqUnit = self.queryResults['Frequency support'].unit
-            for i in range(len(self.queryResults)):
-                freqStr = self.queryResults['Frequency support'][i]
+            freqUnit = self.queryResults[tar]['Frequency support'].unit
+            for i in range(len(self.queryResults[tar])):
+                freqStr = self.queryResults[tar]['Frequency support'][i]
                 freqStr = freqStr.split('U')
                 rowFreqRanges = list()
                 for j in range(len(freqStr)):
@@ -592,8 +434,8 @@ class archiveSearch:
                     freqRange = np.array(freqRange, dtype='float')
                     rowFreqRanges.append(freqRange)
                 targetFreqRanges.append(rowFreqRanges)
-            self.queryResults['Frequency ranges'] = targetFreqRanges
-            self.queryResults['Frequency ranges'].unit = freqUnit
+            self.queryResults[tar]['Frequency ranges'] = targetFreqRanges
+            self.queryResults[tar]['Frequency ranges'].unit = freqUnit
 
     def dumpSearchResults(self, target_data, bands,
                           unique_public_circle_parameters=False,
