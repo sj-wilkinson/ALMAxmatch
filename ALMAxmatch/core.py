@@ -275,7 +275,12 @@ class archiveSearch:
                         nedResult.append(nedSearch)
                     except Exception:
                         pass
-                nedResult = vstack(nedResult)
+                
+                if len(nedResult) > 0:
+                    nedResult = vstack(nedResult)
+                else:
+                    msg = 'No NED results returned. nedResult = {:}'.format(nedResult)
+                    raise ValueError(msg)
 
                 # store rows without matching name in NED
                 self.queryResultsNoNED[target] = setdiff(currTable, nedResult,
@@ -293,6 +298,13 @@ class archiveSearch:
                     if row['ALMA sanitized source name'] in blankZnames:
                         blankZinds.append(i)
                 self.queryResultsNoNEDz[target] = currTable[blankZinds]
+
+                # remove rows where redshift not in range
+                outofrangeZinds = []
+                for i,row in enumerate(nedResult):
+                    if (redshiftRange[0] <= row['Redshift'] <= redshiftRange[1]) == False:
+                        outofrangeZinds.append(i)
+                nedResult.remove_rows(outofrangeZinds)
 
                 # rectify this naming difference between NED and ALMA
                 nedResult.rename_column('DEC', 'Dec')
