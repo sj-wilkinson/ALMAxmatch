@@ -235,8 +235,19 @@ class archiveSearch:
             msg += ' and "lineNames" ({:})'.format(len(lineNames))
             raise ValueError(msg)
 
-        restFreqs = np.array(restFreqs)
+        # generate line names if not set
+        if len(lineNames) == 0:
+            lineNames = ['Line{:}'.format(i) for i in range(len(restFreqs))]
 
+        # sort frequencies and line names in assending frequency order
+        restFreqs = np.array(restFreqs)
+        lineNames = np.array(lineNames)
+
+        restFreqOrderIdx = restFreqs.argsort()
+        restFreqs = restFreqs[restFreqOrderIdx]
+        lineNames = lineNames[restFreqOrderIdx]
+
+        # sort redshift range
         redshiftRange = np.array(redshiftRange)
         redshiftRange.sort()
 
@@ -330,7 +341,6 @@ class archiveSearch:
                 lineObserved = np.zeros((len(ALMAnedResults), len(restFreqs)),
                                          dtype=bool)
 
-
                 for i, row in enumerate(ALMAnedResults):
 
                     # target redshift
@@ -338,9 +348,6 @@ class archiveSearch:
                     
                     # observed frequencies
                     observed_frequencies = [self._observedFreq(rf, row['NED Redshift']) for rf in restFreqs]
-
-                    if len(lineNames) == 0:
-                        lineNames = ['Line{:}'.format(i) for i in range(len(restFreqs))]
 
                     # loop over the target lines, return a boolean flag array and add it to astropy table
                     for j, (observed_frequency, linename) in enumerate(zip(observed_frequencies,lineNames)):
@@ -440,12 +447,18 @@ class archiveSearch:
                 rowFreqRanges = list()
                 for j in range(len(freqStr)):
                     freqRange = freqStr[j].split(',')
-                    freqRange = freqRange[0].strip(' [')
-                    freqRange = freqRange.split('..')
-                    freqRange[1] = freqRange[1].strip(string.ascii_letters)
-                    freqRange = np.array(freqRange, dtype='float')
-                    rowFreqRanges.append(freqRange)
+                    # in a few cases (solar observations?) there is only one frequency. This handles that rather roughly.
+                    if '[' in freqRange[0]:
+                        freqRange = freqRange[0].strip(' [')
+                        freqRange = freqRange.split('..')
+                        freqRange[1] = freqRange[1].strip(string.ascii_letters)
+                        freqRange = np.array(freqRange, dtype='float')
+                        rowFreqRanges.append(freqRange)
+                    else:
+                        rowFreqRanges.append('No frequency range')
+                
                 targetFreqRanges.append(rowFreqRanges)
+                    
             self.queryResults[tar]['Frequency ranges'] = targetFreqRanges
             self.queryResults[tar]['Frequency ranges'].unit = freqUnit
 
