@@ -90,17 +90,13 @@ class archiveSearch:
         Same as queryResults but only containing the targets that had data in
         the ALMA archive and matched a source in NED but NED had no redshift
         information.
-    uniqueBands : dict
-        The unique bands in query results organized with each queried target
-        as keys and the unique bands as the corresponding values. The bands are
-        stored in astropy.table.column objects.
     isObjectQuery : bool or dict
         When archiveSearch is initialized with the `targets` argument then this
         is a dictionary of booleans that indicate whether each queried target
         is a source name (True) or a region (False). Targets are the keys and
         the boolean flags are the values. When archiveSearch is initialized
         with the `allSky` argument then this is False.
-    invalidName : list of strs
+    invalidNames : list of strs
         List of target strings specifying targets that did not return any
         results from the ALMA archive query.
     """
@@ -122,13 +118,11 @@ class archiveSearch:
         else:
             self.targets['All sky'] = 'All sky'
 
-        self.invalidName = list()
+        self.invalidNames = list()
 
         self.queryResults = dict()
         self.queryResultsNoNED = dict()
         self.queryResultsNoNEDz = dict()
-
-        self.uniqueBands = dict()
 
     def runQueries(self, public=False, science=False, **kwargs):
         """Run requested queries.
@@ -184,9 +178,9 @@ class archiveSearch:
                                                            science=science,
                                                            **kwargs)
                 except ValueError:
-                    self.invalidName.append(target)
+                    self.invalidNames.append(target)
                     print('Invalid name "{:}"'.format(target))
-            for key in self.invalidName:
+            for key in self.invalidNames:
                 self.targets.pop(key)
 
         self._convertDateColumnsToDatetime()
@@ -409,11 +403,13 @@ class archiveSearch:
             self.queryResults[target]['Release date'] = relCol
             self.queryResults[target]['Observation date'] = obsCol
 
-    def observedBands(self):
-        """Save unique bands into archiveSearch object.
+    def uniqueBands(self):
+        """Return unique ALMA bands in the `queryResults` tables.
         """
+        uniqueBands = dict()
         for tar in self.targets:
-            self.uniqueBands[tar] = np.unique(self.queryResults[tar]['Band'])
+            uniqueBands[tar] = np.unique(self.queryResults[tar]['Band'])
+        return uniqueBands
 
     def parseFrequencyRanges(self):
         """Parses observed frequency ranges into something more useable.
@@ -559,7 +555,7 @@ if __name__ == "__main__":
         mySurvey.observedBands()
         mySurvey.parseFrequencyRanges()
         print(mySurvey.targets)
-        print(mySurvey.uniqueBands)
+        print(mySurvey.uniqueBands())
         mySurvey.printQueryResults()
         lines = mySurvey.formatQueryResults(max_lines=-1, max_width=-1)
         with open('survey_out.txt', 'w') as f:
