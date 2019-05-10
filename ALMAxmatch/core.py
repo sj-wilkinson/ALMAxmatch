@@ -90,17 +90,13 @@ class archiveSearch:
         Same as queryResults but only containing the targets that had data in
         the ALMA archive and matched a source in NED but NED had no redshift
         information.
-    uniqueBands : dict
-        The unique bands in query results organized with each queried target
-        as keys and the unique bands as the corresponding values. The bands are
-        stored in astropy.table.column objects.
     isObjectQuery : bool or dict
         When archiveSearch is initialized with the `targets` argument then this
         is a dictionary of booleans that indicate whether each queried target
         is a source name (True) or a region (False). Targets are the keys and
         the boolean flags are the values. When archiveSearch is initialized
         with the `allSky` argument then this is False.
-    invalidName : list of strs
+    invalidNames : list of strs
         List of target strings specifying targets that did not return any
         results from the ALMA archive query.
     """
@@ -122,13 +118,11 @@ class archiveSearch:
         else:
             self.targets['All sky'] = 'All sky'
 
-        self.invalidName = list()
+        self.invalidNames = list()
 
         self.queryResults = dict()
         self.queryResultsNoNED = dict()
         self.queryResultsNoNEDz = dict()
-
-        self.uniqueBands = dict()
 
     def runQueries(self, public=False, science=False, **kwargs):
         """Run requested queries.
@@ -184,9 +178,9 @@ class archiveSearch:
                                                            science=science,
                                                            **kwargs)
                 except ValueError:
-                    self.invalidName.append(target)
+                    self.invalidNames.append(target)
                     print('Invalid name "{:}"'.format(target))
-            for key in self.invalidName:
+            for key in self.invalidNames:
                 self.targets.pop(key)
 
         self._convertDateColumnsToDatetime()
@@ -228,32 +222,28 @@ class archiveSearch:
             msg = '"frequency" cannot be passed to runQueriesWithLines'
             raise ValueError(msg)
 
-        lineNames = np.array(lineNames)
-        if (len(lineNames) != len(restFreqs) and len(lineNames) != 0):
-            msg = 'length mismatch between '
-            msg += '"restFreqs" ({:})'.format(len(restFreqs))
-            msg += ' and "lineNames" ({:})'.format(len(lineNames))
-            raise ValueError(msg)
-
-        # generate line names if not set
-        if len(lineNames) == 0:
-            lineNames = ['Line{:}'.format(i) for i in range(len(restFreqs))]
-
-        # sort frequencies and line names in assending frequency order
         restFreqs = np.array(restFreqs)
         lineNames = np.array(lineNames)
 
-        restFreqOrderIdx = restFreqs.argsort()
-        restFreqs = restFreqs[restFreqOrderIdx]
-        lineNames = lineNames[restFreqOrderIdx]
+        if (len(lineNames) != len(restFreqs) and len(lineNames) != 0):
+            msg = 'length mismatch between ' \
+                  + '"restFreqs" ({:})'.format(len(restFreqs)) \
+                  + ' and "lineNames" ({:})'.format(len(lineNames))
+            raise ValueError(msg)
 
-        # sort redshift range
+        if len(lineNames) == 0:
+            lineNames = ['Line{:}'.format(i) for i in range(len(restFreqs))]
+
+        inds = restFreqs.argsort()
+        restFreqs = restFreqs[inds]
+        lineNames = lineNames[inds]
+
         redshiftRange = np.array(redshiftRange)
         redshiftRange.sort()
 
         # define frequency range from lines and redshifts
-        lowFreq = self._observedFreq(np.sort(restFreqs)[0], redshiftRange[1])
-        highFreq = self._observedFreq(np.sort(restFreqs)[-1], redshiftRange[0])
+        lowFreq = self._observedFreq(restFreqs[0], redshiftRange[1])
+        highFreq = self._observedFreq(restFreqs[-1], redshiftRange[0])
         freqLimits = '{:} .. {:}'.format(lowFreq, highFreq)
 
         self.runQueries(public=public, science=science, frequency=freqLimits,
@@ -262,8 +252,7 @@ class archiveSearch:
         self.parseFrequencyRanges()
 
         for target in self.targets:
-            if len(self.queryResults[target])>0: # only do this for targets with ALMA results
-
+            if len(self.queryResults[target])>0: # targets with ALMA results
                 currTable = self.queryResults[target]
 
                 # sanitize ALMA source names
@@ -281,7 +270,7 @@ class archiveSearch:
                     try:
                         nedSearch = Ned.query_object(sourceName)
                         nedSearch['ALMA sanitized source name'] = sourceName
-                        # doing this prevents vstack warnings
+                        # next line prevents vstack warnings
                         nedSearch.meta = None
                         nedResult.append(nedSearch)
                     except Exception:
@@ -290,41 +279,40 @@ class archiveSearch:
                 if len(nedResult) > 0:
                     nedResult = vstack(nedResult)
                 else:
-                    msg = 'No NED results returned. nedResult = {:}'.format(nedResult)
+                    msg = 'No NED results returned. ' \
+                          + 'nedResult = {:}'.format(nedResult)
                     raise ValueError(msg)
 
                 # store rows without matching name in NED
                 self.queryResultsNoNED[target] = setdiff(currTable, nedResult,
                                                          keys='ALMA sanitized source name')
 
-                # remove rows without redshifts in NED
-                blankZinds = nedResult['Redshift'].mask.nonzero()
-                blankZnames = nedResult['ALMA sanitized source name'][blankZinds]
-                nedResult.remove_rows(blankZinds)
+                # remove all rows without redshift in NED
+                noZinds = nedResult['Redshift'].mask.nonzero()
+                blankZnames = nedResult['ALMA sanitized source name'][noZinds]
+                nedResult.remove_rows(noZinds)
 
-                # store rows with matching name in NED but no z
-                # (this seems like a dumb approach)
-                blankZinds = list()
+                # store rows with no redshift in NED but with matching name
+                noZinds = list()
                 for i,row in enumerate(currTable):
                     if row['ALMA sanitized source name'] in blankZnames:
-                        blankZinds.append(i)
-                self.queryResultsNoNEDz[target] = currTable[blankZinds]
+                        noZinds.append(i)
+                self.queryResultsNoNEDz[target] = currTable[noZinds]
 
                 # remove rows where redshift not in range
-                outofrangeZinds = []
+                outOfRangeZInds = list()
                 for i,row in enumerate(nedResult):
-                    if (redshiftRange[0] <= row['Redshift'] <= redshiftRange[1]) == False:
-                        outofrangeZinds.append(i)
-                nedResult.remove_rows(outofrangeZinds)
+                    if (redshiftRange[0] > row['Redshift'] or
+                        redshiftRange[1] < row['Redshift']):
+                        outOfRangeZInds.append(i)
+                nedResult.remove_rows(outOfRangeZInds)
 
                 # rectify this naming difference between NED and ALMA
                 nedResult.rename_column('DEC', 'Dec')
 
-                # keep redshifts, positions too if we wanna check later
                 nedResult.keep_columns(['Object Name', 'RA', 'Dec', 'Redshift',
                                         'ALMA sanitized source name'])
 
-                # join NED redshift table and ALMA archive table based on name
                 ALMAnedResults = join(currTable, nedResult,
                                       keys='ALMA sanitized source name')
 
@@ -340,27 +328,24 @@ class archiveSearch:
                 # mark flags if spw is on line (initialized to False)
                 lineObserved = np.zeros((len(ALMAnedResults), len(restFreqs)),
                                          dtype=bool)
-
-                for i, row in enumerate(ALMAnedResults):
-
-                    # target redshift
-                    z = row['NED Redshift']
-                    
-                    # observed frequencies
-                    observed_frequencies = [self._observedFreq(rf, row['NED Redshift']) for rf in restFreqs]
-
-                    # loop over the target lines, return a boolean flag array and add it to astropy table
-                    for j, (observed_frequency, linename) in enumerate(zip(observed_frequencies,lineNames)):
-                        lineObserved[i, j]=self._lineObserved(lineFreq=observed_frequency
-                                                                    , spwFreqLims=row['Frequency ranges'])
-
+                for i,row in enumerate(ALMAnedResults):
+                    obsFreqs = self._observedFreq(restFreqs,
+                                                  row['NED Redshift'])
+                    for j in range(len(obsFreqs)):
+                        for spwRange in row['Frequency ranges']:
+                            if not lineObserved[i, j]:
+                                if spwRange[0] <= obsFreqs[j] <= spwRange[1]:
+                                    lineObserved[i, j] = True
+                            else:
+                                break
                 for i in range(len(restFreqs)):
                     ALMAnedResults[lineNames[i]] = lineObserved[:, i]
 
                 # remove rows which have no lines covered
                 lineCount = np.array(ALMAnedResults[lineNames[0]], dtype=int)
                 for i in range(1, len(restFreqs)):
-                    lineCount += np.array(ALMAnedResults[lineNames[i]], dtype=int)
+                    lineCount += np.array(ALMAnedResults[lineNames[i]],
+                                          dtype=int)
                 noLinesInds = np.where(lineCount == 0)
                 ALMAnedResults.remove_rows(noLinesInds)
 
@@ -381,10 +366,10 @@ class archiveSearch:
         """
         targetType = type(target)
 
-        if targetType == str:
+        if targetType == str:    # source name
             self.targets[target] = target
             self.isObjectQuery[target] = True
-        elif targetType == list:
+        elif targetType == list: # region
             if type(target[0]) != SkyCoord:
                 target[0] = commons.parse_coordinates(target[0])
             if type(target[1]) != Angle:
@@ -418,11 +403,13 @@ class archiveSearch:
             self.queryResults[target]['Release date'] = relCol
             self.queryResults[target]['Observation date'] = obsCol
 
-    def observedBands(self):
-        """Save unique bands into archiveSearch object.
+    def uniqueBands(self):
+        """Return unique ALMA bands in the `queryResults` tables.
         """
+        uniqueBands = dict()
         for tar in self.targets:
-            self.uniqueBands[tar] = np.unique(self.queryResults[tar]['Band'])
+            uniqueBands[tar] = np.unique(self.queryResults[tar]['Band'])
+        return uniqueBands
 
     def parseFrequencyRanges(self):
         """Parses observed frequency ranges into something more useable.
@@ -447,7 +434,8 @@ class archiveSearch:
                 rowFreqRanges = list()
                 for j in range(len(freqStr)):
                     freqRange = freqStr[j].split(',')
-                    # in a few cases (solar observations?) there is only one frequency. This handles that rather roughly.
+                    # in a few cases (solar observations?) there is only one
+                    # frequency. This handles that rather roughly.
                     if '[' in freqRange[0]:
                         freqRange = freqRange[0].strip(' [')
                         freqRange = freqRange.split('..')
@@ -521,9 +509,9 @@ class archiveSearch:
 
         Parameters
         ----------
-        restFreq : float
-            Rest frequency of line to calculate observed frequency for.
-        z : float
+        restFreq : float, scalar or array
+            Rest frequency of line(s) to calculate observed frequency for.
+        z : float, scalar
             Redshift of observed object.
 
         Returns
@@ -532,34 +520,6 @@ class archiveSearch:
             `restFreq` / (1 + `z`)
         """
         return restFreq/(1+z)
-
-    def _lineObserved(self, lineFreq, spwFreqLims):
-        """Return whether target frequency lies within frequency ranges.
-
-        Parameters
-        ----------
-        lineFreq : float
-            Spectral line frequency to check for within `spwFreqLims`.
-        spwFreqLims : array_like
-            A sequence of two-element sequences
-            [(low freq1, high freq1), (low freq2, high freq2), ...] that
-            define frequency ranges that are checked whether they contain
-            `lineFreq`.
-
-        Returns
-        -------
-        bool
-            Whether `lineFreq` lies within any frequency range in
-            `spwFreqLims`.
-        """
-        lineObserved = False
-
-        for spw in spwFreqLims:
-            if spw[0] <= lineFreq <= spw[1]:
-                lineObserved = True
-                break
-
-        return lineObserved
 
 
 if __name__ == "__main__":
@@ -570,9 +530,10 @@ if __name__ == "__main__":
         mySurvey.runTargetQueryWithLines([113.123337, 230.538],
                                      redshiftRange=(0, 0.1),
                                      science=True)
-        print(len(mySurvey.queryResults['coord=12h26m32.1s 12d43m24s radius=6deg']))
-        print(mySurvey.queryResultsNoNED['coord=12h26m32.1s 12d43m24s radius=6deg'])
-        print(mySurvey.queryResultsNoNEDz['coord=12h26m32.1s 12d43m24s radius=6deg'])
+        tar = 'coord=12h26m32.1s 12d43m24s radius=6deg'
+        print(len(mySurvey.queryResults[tar]))
+        print(mySurvey.queryResultsNoNED[tar])
+        print(mySurvey.queryResultsNoNEDz[tar])
 
     # region query
     if False:
@@ -594,7 +555,7 @@ if __name__ == "__main__":
         mySurvey.observedBands()
         mySurvey.parseFrequencyRanges()
         print(mySurvey.targets)
-        print(mySurvey.uniqueBands)
+        print(mySurvey.uniqueBands())
         mySurvey.printQueryResults()
         lines = mySurvey.formatQueryResults(max_lines=-1, max_width=-1)
         with open('survey_out.txt', 'w') as f:
