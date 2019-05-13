@@ -44,6 +44,7 @@ from astroquery.utils import commons
 from astropy.coordinates import SkyCoord, Angle
 import numpy as np
 import string
+from tqdm import tqdm
 
 # fix Python SSL errors when downloading using the https
 import os, ssl
@@ -164,7 +165,9 @@ class archiveSearch:
                       + 'initialized with the "targets" argument.'
                 raise ValueError(msg)
 
-            for target in self.targets:
+            pBar = tqdm(self.targets, desc='ALMA archive querying',
+                        unit=' target')
+            for target in pBar:
                 payload = dict()
                 if self.isObjectQuery[target] == True:
                     payload['source_name_resolver'] = target
@@ -263,10 +266,11 @@ class archiveSearch:
                 currTable['ALMA sanitized source name'] = safeNames
 
                 uniqueALMAnames = np.unique(currTable['ALMA sanitized source name'])
-
                 # query NED for object redshifts
                 nedResult = list()
-                for sourceName in uniqueALMAnames:
+                pBar = tqdm(uniqueALMAnames, desc='NED cross matching',
+                            unit=' source')
+                for sourceName in pBar:
                     try:
                         nedSearch = Ned.query_object(sourceName)
                         nedSearch['ALMA sanitized source name'] = sourceName
