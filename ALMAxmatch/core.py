@@ -250,6 +250,7 @@ class archiveSearch:
 
         if len(lineNames) == 0:
             lineNames = ['Line{:}'.format(i) for i in range(len(restFreqs))]
+            lineNames = np.array(lineNames)
 
         inds = restFreqs.argsort()
         restFreqs = restFreqs[inds]
