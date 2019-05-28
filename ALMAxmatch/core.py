@@ -37,14 +37,15 @@ to do:
     -search in NED for coords and pass that to ALMA
 """
 
-from astropy.table import join, setdiff, vstack
+from astropy.coordinates import SkyCoord, Angle
+from astropy.table import hstack, vstack
+from astropy import units as u
 from astroquery.alma import Alma
 from astroquery.ned import Ned
 from astroquery.utils import commons
-from astropy.coordinates import SkyCoord, Angle
 import numpy as np
 import string
-from tqdm import tqdm
+from tqdm import tqdm, trange
 
 # fix Python SSL errors when downloading using the https
 import os, ssl
@@ -86,7 +87,10 @@ class archiveSearch:
         appear here.
     queryResultsNoNED : dict
         Same as queryResults but only containing the targets that had data in
-        the ALMA archive but did not have a match in NED.
+        the ALMA archive but did not have a singular match in NED (so could be
+        cases with no match in NED or where multiple objects matched to a
+        single ALMA observation and it could not be narrowed down to one
+        automatically).
     queryResultsNoNEDz : dict
         Same as queryResults but only containing the targets that had data in
         the ALMA archive and matched a source in NED but NED had no redshift
@@ -220,6 +224,14 @@ class archiveSearch:
             that could contain the lines in the specified redshift range. If
             archiveSearch was initialized with the `targets` argument then
             "source_name_resolver" and "ra_dec" also cannot be used here.
+
+        Matching against NED to find source redshifts is attempted first with
+        the ALMA archive coordinates, searching in NED with a search radius of
+        30 arcseconds and only keeping results with type G (galaxy). If more
+        or less than one NED result matches the positional search then a search
+        is attempted based on a sanitized version of the ALMA archive source
+        name. If there is no match to name then the ALMA observation is placed
+        in the queryResultsNoNED dictionary.
         """
         if 'frequency' in kwargs:
             msg = '"frequency" cannot be passed to runQueriesWithLines'
@@ -265,43 +277,57 @@ class archiveSearch:
                 safeNames = np.char.upper(safeNames)
                 currTable['ALMA sanitized source name'] = safeNames
 
-                uniqueALMAnames = np.unique(currTable['ALMA sanitized source name'])
                 # query NED for object redshifts
                 nedResult = list()
-                pBar = tqdm(uniqueALMAnames, desc='NED cross matching',
-                            unit=' source')
-                for sourceName in pBar:
+                noNEDinds = list()
+                searchCoords = SkyCoord(ra=currTable['RA'],
+                                        dec=currTable['Dec'],
+                                        unit=(u.deg, u.deg), frame='icrs')
+                pBar = trange(len(currTable), desc='NED cross matching',
+                              unit=' source')
+                for i in pBar:
+                    # coordinate search
                     try:
-                        nedSearch = Ned.query_object(sourceName)
-                        nedSearch['ALMA sanitized source name'] = sourceName
+                        nedSearch = Ned.query_region(searchCoords[i],
+                                                     radius=30*u.arcsec,
+                                                     equinox='J2000.0')
+                    except Exception:
+                        pass
+
+                    # only want galaxies
+                    typeInds = np.where(nedSearch['Type'] != b'G')
+                    nedSearch.remove_rows(typeInds)
+
+                    # try name search when not just one coordinate match
+                    if len(nedSearch) != 1:
+                        try:
+                            nedSearch = Ned.query_object(currTable['ALMA sanitized source name'][i])
+                        except Exception:
+                            pass
+
+                    if len(nedSearch) != 1:
+                        noNEDinds.append(i)
+                    else:
                         # next line prevents vstack warnings
                         nedSearch.meta = None
                         nedResult.append(nedSearch)
-                    except Exception:
-                        pass
-                
+
                 if len(nedResult) > 0:
-                    nedResult = vstack(nedResult)
+                    nedResult = vstack(nedResult, join_type='exact')
                 else:
                     msg = 'No NED results returned. ' \
                           + 'nedResult = {:}'.format(nedResult)
                     raise ValueError(msg)
 
-                # store rows without matching name in NED
-                self.queryResultsNoNED[target] = setdiff(currTable, nedResult,
-                                                         keys='ALMA sanitized source name')
+                # store away rows without a single NED match
+                self.queryResultsNoNED[target] = currTable[noNEDinds]
+                currTable.remove_rows(noNEDinds)
 
-                # remove all rows without redshift in NED
+                # store away rows without redshift in NED
                 noZinds = nedResult['Redshift'].mask.nonzero()
-                blankZnames = nedResult['ALMA sanitized source name'][noZinds]
                 nedResult.remove_rows(noZinds)
-
-                # store rows with no redshift in NED but with matching name
-                noZinds = list()
-                for i,row in enumerate(currTable):
-                    if row['ALMA sanitized source name'] in blankZnames:
-                        noZinds.append(i)
                 self.queryResultsNoNEDz[target] = currTable[noZinds]
+                currTable.remove_rows(noZinds)
 
                 # remove rows where redshift not in range
                 outOfRangeZInds = list()
@@ -310,15 +336,16 @@ class archiveSearch:
                         redshiftRange[1] < row['Redshift']):
                         outOfRangeZInds.append(i)
                 nedResult.remove_rows(outOfRangeZInds)
+                currTable.remove_rows(outOfRangeZInds)
 
                 # rectify this naming difference between NED and ALMA
                 nedResult.rename_column('DEC', 'Dec')
 
-                nedResult.keep_columns(['Object Name', 'RA', 'Dec', 'Redshift',
-                                        'ALMA sanitized source name'])
+                nedResult.keep_columns(['Object Name', 'RA', 'Dec',
+                                        'Redshift'])
 
-                ALMAnedResults = join(currTable, nedResult,
-                                      keys='ALMA sanitized source name')
+                ALMAnedResults = hstack([currTable, nedResult],
+                                        join_type='exact')
 
                 # tidy up column names
                 ALMAnedResults.rename_column('Source name', 'ALMA source name')
