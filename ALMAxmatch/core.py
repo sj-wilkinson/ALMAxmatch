@@ -194,6 +194,7 @@ class archiveSearch:
         self._parseFrequencyRanges()
         self._parseSpectralResolution()
         self._parseLineSensitivities()
+        self._parsePolarizations()
 
     def runQueriesWithLines(self, restFreqs, redshiftRange=(0, 1000),
                             lineNames=[], public=False, science=False,
@@ -500,8 +501,8 @@ class archiveSearch:
         """
         for tar in self.targets:
             table = self.queryResults[tar]
-            if len(table['Frequency resolution']) > 1:
-                msg = 'Dev alert: "Frequency resolution" column has more than '
+            if type(table['Frequency resolution'][0]) != np.float64:
+                msg = 'Dev alert: "Frequency resolution" may have more than '
                 msg += 'one entry per observation so it may not be wise to '
                 msg += 'completely replace it in _parseSpectralResolution '
                 msg += 'anymore.'
@@ -577,6 +578,39 @@ class archiveSearch:
             table['Line sensitivity (10 km/s)'].unit = 'mJy/beam'
             table['Line sensitivity (native)'] = tarNatSens
             table['Line sensitivity (native)'].unit = 'mJy/beam'
+
+    def _parsePolarizations(self):
+        """Parses all polarization information into a more complete form.
+
+        Loops through the list of targets and then through each query result
+        row pulling out the polarization stored in the query result column
+        'Frequency support' for each spectral window (SPW). This
+        replaces the current 'Pol products' column with lists of strings
+        specifying the polarization (because the current column only has the
+        value for the first SPW).
+        """
+        for tar in self.targets:
+            table = self.queryResults[tar]
+            if type(table['Pol products'][0]) != str:
+                msg = 'Dev alert: "Pol products" column may have more than '
+                msg += 'one entry per observation so it may not be wise to '
+                msg += 'completely replace it in _parseSpectralResolution '
+                msg += 'anymore.'
+                print(msg)
+            targetPol = list()
+            for i in range(len(table)):
+                freqStr = table['Frequency support'][i]
+                freqStr = freqStr.split('U')
+                rowPol = list()
+                for j in range(len(freqStr)):
+                   polarization  = freqStr[j].split(',')
+                   polarization = polarization[4].strip(' ]')
+                   rowPol.append(polarization)
+                targetPol.append(rowPol)
+
+            table.remove_column('Pol products')
+
+            table['Pol products'] = targetPol
 
     def dumpSearchResults(self, target_data, bands,
                           unique_public_circle_parameters=False,
