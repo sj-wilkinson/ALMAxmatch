@@ -458,10 +458,11 @@ class archiveSearch:
         quantity with units.
         """
         for tar in self.targets:
+            table = self.queryResults[tar]
             targetFreqRanges = list()
-            freqUnit = self.queryResults[tar]['Frequency support'].unit
-            for i in range(len(self.queryResults[tar])):
-                freqStr = self.queryResults[tar]['Frequency support'][i]
+            freqUnit = table['Frequency support'].unit
+            for i in range(len(table)):
+                freqStr = table['Frequency support'][i]
                 freqStr = freqStr.split('U')
                 rowFreqRanges = list()
                 for j in range(len(freqStr)):
@@ -479,8 +480,8 @@ class archiveSearch:
                 
                 targetFreqRanges.append(rowFreqRanges)
                     
-            self.queryResults[tar]['Frequency ranges'] = targetFreqRanges
-            self.queryResults[tar]['Frequency ranges'].unit = freqUnit
+            table['Frequency ranges'] = targetFreqRanges
+            table['Frequency ranges'].unit = freqUnit
 
     def _parseLineSensitivities(self):
         """Parses all line sensitivity information into a more useful form.
