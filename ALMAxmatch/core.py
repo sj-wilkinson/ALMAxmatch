@@ -191,6 +191,7 @@ class archiveSearch:
                 self.targets.pop(key)
 
         self._convertDateColumnsToDatetime()
+        self._parseFrequencyRanges()
         self._parseLineSensitivities()
 
     def runQueriesWithLines(self, restFreqs, redshiftRange=(0, 1000),
@@ -264,8 +265,6 @@ class archiveSearch:
 
         self.runQueries(public=public, science=science, frequency=freqLimits,
                         **kwargs)
-
-        self.parseFrequencyRanges()
 
         for target in self.targets:
             if len(self.queryResults[target])>0: # targets with ALMA results
@@ -443,7 +442,7 @@ class archiveSearch:
             uniqueBands[tar] = np.unique(self.queryResults[tar]['Band'])
         return uniqueBands
 
-    def parseFrequencyRanges(self):
+    def _parseFrequencyRanges(self):
         """Parses observed frequency ranges into something more useable.
 
         Loops through the list of targets and then through each query result
