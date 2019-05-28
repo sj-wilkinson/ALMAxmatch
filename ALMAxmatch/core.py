@@ -191,6 +191,7 @@ class archiveSearch:
                 self.targets.pop(key)
 
         self._convertDateColumnsToDatetime()
+        self._parseLineSensitivities()
 
     def runQueriesWithLines(self, restFreqs, redshiftRange=(0, 1000),
                             lineNames=[], public=False, science=False,
@@ -481,6 +482,61 @@ class archiveSearch:
             self.queryResults[tar]['Frequency ranges'] = targetFreqRanges
             self.queryResults[tar]['Frequency ranges'].unit = freqUnit
 
+    def _parseLineSensitivities(self):
+        """Parses all line sensitivity information into a more useful form.
+
+        Loops through the list of targets and then through each query result
+        row pulling out the line sensitivities stored in the query result
+        column 'Frequency support'. This includes the sensitivity at the native
+        spectral resolution and with 10 km/s wide channels, for all spectral
+        windows (SPWs). A new column is added to the target query result table
+        called 'Line sensitivity (native)' where lists of astropy quantities are
+        stored that give the sensitivity at the native spectral resolution in
+        each SPW for each row (i.e. execution block). This also replaces the
+        current 'Line sensitivity (10 km/s)' column with one of the same form
+        as for the native spectral resolution (because the current column only
+        has the sensitivity for one SPW and without units).
+
+        The new column is easy to read by people and is in a form where math
+        can be done with the sensitivities. Each sensitivity is an astropy
+        float quantity with units.
+        """
+        for tar in self.targets:
+            table = self.queryResults[tar]
+            if table['Line sensitivity (10 km/s)'].unit:
+                msg = 'Dev alert: "Line sensitivity (10 km/s)" column has'
+                msg += 'units so it may not be wise to completely replace'
+                msg += 'it in _parseLineSensitivities anymore.'
+                print(msg)
+            tar10sens = list()
+            tarNatSens = list()
+            for i in range(len(table)):
+                freqStr = table['Frequency support'][i]
+                freqStr = freqStr.split('U')
+                row10sens = list()
+                rowNatSens = list()
+                for j in range(len(freqStr)):
+                    sens = freqStr[j].split(',')
+                    tenKmsSens = sens[2]
+                    tenKmsSens = tenKmsSens.split('@')[0]
+                    tenKmsSens = u.Quantity(tenKmsSens)
+                    tenKmsSens = tenKmsSens.to('mJy/beam')
+                    row10sens.append(tenKmsSens.value)
+                    nativeSens = sens[3]
+                    nativeSens = nativeSens.split('@')[0]
+                    nativeSens = u.Quantity(nativeSens)
+                    nativeSens = nativeSens.to('mJy/beam')
+                    rowNatSens.append(nativeSens.value)
+                tar10sens.append(row10sens)
+                tarNatSens.append(rowNatSens)
+
+            table.remove_column('Line sensitivity (10 km/s)')
+
+            table['Line sensitivity (10 km/s)'] = tar10sens
+            table['Line sensitivity (10 km/s)'].unit = 'mJy/beam'
+            table['Line sensitivity (native)'] = tarNatSens
+            table['Line sensitivity (native)'].unit = 'mJy/beam'
+
     def dumpSearchResults(self, target_data, bands,
                           unique_public_circle_parameters=False,
                           unique_private_circle_parameters=False):
@@ -556,24 +612,26 @@ class archiveSearch:
 if __name__ == "__main__":
     # region query with line search
     if True:
-        target = ('12h26m32.1s 12d43m24s', '6deg')
-        myarchiveSearch = archiveSearch(target)
-        mySurvey.runTargetQueryWithLines([113.123337, 230.538],
-                                     redshiftRange=(0, 0.1),
-                                     science=True)
-        tar = 'coord=12h26m32.1s 12d43m24s radius=6deg'
-        print(len(mySurvey.queryResults[tar]))
-        print(mySurvey.queryResultsNoNED[tar])
-        print(mySurvey.queryResultsNoNEDz[tar])
+        target = ['12h26m32.1s 12d43m24s', '6deg']
+        myarchiveSearch = archiveSearch(targets=[target])
+        myarchiveSearch.runQueriesWithLines([113.123337, 230.538],
+                                            redshiftRange=(0, 0.1),
+                                            lineNames=['CO (J=2-1)',
+                                                       'CN (N=1-0)'],
+                                            science=True)
+        #tar = 'coord=12h26m32.1s 12d43m24s radius=6deg'
+        #print(len(myarchiveSearch.queryResults[tar]))
+        #print(myarchiveSearch.queryResultsNoNED[tar])
+        #print(myarchiveSearch.queryResultsNoNEDz[tar])
 
     # region query
     if False:
         target = ('12h26m32.1s 12d43m24s', '30arcmin')
-        mySurvey = survey(target)
-        mySurvey.runTargetQuery()
-        #mySurvey.observedBands()
-        #mySurvey.parseFrequencyRanges()
-        mySurvey.printQueryResults()
+        myarchiveSearch = survey(target)
+        myarchiveSearch.runTargetQuery()
+        #myarchiveSearch.observedBands()
+        #myarchiveSearch.parseFrequencyRanges()
+        myarchiveSearch.printQueryResults()
 
     # object name query
     if False:
@@ -581,14 +639,14 @@ if __name__ == "__main__":
         print(targets)
         print("--------------")
 
-        mySurvey = survey(targets)
-        mySurvey.runTargetQuery()
-        mySurvey.observedBands()
-        mySurvey.parseFrequencyRanges()
-        print(mySurvey.targets)
-        print(mySurvey.uniqueBands())
-        mySurvey.printQueryResults()
-        lines = mySurvey.formatQueryResults(max_lines=-1, max_width=-1)
+        myarchiveSearch = survey(targets)
+        myarchiveSearch.runTargetQuery()
+        myarchiveSearch.observedBands()
+        myarchiveSearch.parseFrequencyRanges()
+        print(myarchiveSearch.targets)
+        print(myarchiveSearch.uniqueBands())
+        myarchiveSearch.printQueryResults()
+        lines = myarchiveSearch.formatQueryResults(max_lines=-1, max_width=-1)
         with open('survey_out.txt', 'w') as f:
             for line in lines:
                 f.write(line+'\n')
