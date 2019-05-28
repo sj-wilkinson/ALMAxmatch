@@ -7,34 +7,19 @@ https://nbviewer.jupyter.org/gist/keflavich/19175791176e8d1fb204
 
 to do:
 ------
-  -factor out ALMA source name sanitation into a private method and run on all
-   query result tables
-  -remove hard-coded public=False and science=False from runTargetQuery
-    -maybe the queries could always retrieve all data but we store an internal
-     flag specifying those options so you can change your mind later and just
-     flip the flag(s) to whatever you want
+  -add velocity resolution parser method to get resolution for each SPW in each
+   observation (like how we determine the frequency resolution for all SPWs)
+  -questions for the ALMA archive group:
+    -what are the units on spatial resolution? brunettn thinks if they fix it
+     to be included in the actual archive results meta data that astroquery
+     will pick them up when making the original astropy table
+    -what is the 'COUNT' column?
+  -run ALMA source name sanitation on all query result tables (factor out if
+   useful)
   -need some kind of check and case handling for when the queries have
    already been run but new targets are added
-  -actually incorporate into the query tool class
-  -make it continue to search for the next target if previous one doesn't find
-   any information.
-  -give message when it doesn't find any observation for the target.
-  -make more methods to fully parse the frequency support column into readable
-   and useable (e.g. arrays of floats) forms
-    -currently done for frequency ranges for each SPW in each result row (at
-     the execution block level)
-  -do we want to work over the whole query result table to put all columns in
-   useful forms (like the dates as datetime objects and parsing out the SPW
-   frequecy ranges)?
-    -if yes, brunettn thinks they should all be run automatically when the
-     query is finished (like _convertDateColumnsToDatetime is now)
-  -add description somewhere that when querying a region, the targets added
-   must be tuples with (coordinates, radius) specified like the first two
-   parameters of Alma.query_region
-  -ideas for better name matching
-    -"N" instead of full "NGC" in name is sometimes used
-    -search for substrings for name matching
-    -search in NED for coords and pass that to ALMA
+    -should probably just disallow adding targets after the query is run
+  -deal with dumpSearchResults method
 """
 
 from astropy.coordinates import SkyCoord, Angle
