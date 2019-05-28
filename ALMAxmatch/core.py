@@ -192,6 +192,7 @@ class archiveSearch:
 
         self._convertDateColumnsToDatetime()
         self._parseFrequencyRanges()
+        self._parseSpectralResolution()
         self._parseLineSensitivities()
 
     def runQueriesWithLines(self, restFreqs, redshiftRange=(0, 1000),
@@ -483,6 +484,45 @@ class archiveSearch:
             table['Frequency ranges'] = targetFreqRanges
             table['Frequency ranges'].unit = freqUnit
 
+    def _parseSpectralResolution(self):
+        """Parses all spectral resolution information into a more useful form.
+
+        Loops through the list of targets and then through each query result
+        row pulling out the spectral resolution stored in the query result
+        column 'Frequency support' for each spectral window (SPW). This
+        replaces the current 'Frequency resolution' column with lists of
+        astropy quantities specifying the spectral resolution (because the
+        current column only has the value for the first SPW).
+
+        The new column is easy to read by people and is in a form where math
+        can be done with the resolutions. Each resolution is an astropy
+        float quantity with units.
+        """
+        for tar in self.targets:
+            table = self.queryResults[tar]
+            if len(table['Frequency resolution']) > 1:
+                msg = 'Dev alert: "Frequency resolution" column has more than '
+                msg += 'one entry per observation so it may not be wise to '
+                msg += 'completely replace it in _parseSpectralResolution '
+                msg += 'anymore.'
+                print(msg)
+            targetRes = list()
+            for i in range(len(table)):
+                freqStr = table['Frequency support'][i]
+                freqStr = freqStr.split('U')
+                rowRes = list()
+                for j in range(len(freqStr)):
+                    resolution = freqStr[j].split(',')
+                    resolution = u.Quantity(resolution[1])
+                    resolution = resolution.to('kHz')
+                    rowRes.append(resolution.value)
+                targetRes.append(rowRes)
+
+            table.remove_column('Frequency resolution')
+
+            table['Frequency resolution'] = targetRes
+            table['Frequency resolution'].unit = 'kHz'
+
     def _parseLineSensitivities(self):
         """Parses all line sensitivity information into a more useful form.
 
@@ -505,8 +545,8 @@ class archiveSearch:
         for tar in self.targets:
             table = self.queryResults[tar]
             if table['Line sensitivity (10 km/s)'].unit:
-                msg = 'Dev alert: "Line sensitivity (10 km/s)" column has'
-                msg += 'units so it may not be wise to completely replace'
+                msg = 'Dev alert: "Line sensitivity (10 km/s)" column has '
+                msg += 'units so it may not be wise to completely replace '
                 msg += 'it in _parseLineSensitivities anymore.'
                 print(msg)
             tar10sens = list()
