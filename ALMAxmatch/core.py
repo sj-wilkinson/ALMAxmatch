@@ -7,44 +7,30 @@ https://nbviewer.jupyter.org/gist/keflavich/19175791176e8d1fb204
 
 to do:
 ------
-  -factor out ALMA source name sanitation into a private method and run on all
-   query result tables
-  -remove hard-coded public=False and science=False from runTargetQuery
-    -maybe the queries could always retrieve all data but we store an internal
-     flag specifying those options so you can change your mind later and just
-     flip the flag(s) to whatever you want
+  -add velocity resolution parser method to get resolution for each SPW in each
+   observation (like how we determine the frequency resolution for all SPWs)
+  -questions for the ALMA archive group:
+    -what are the units on spatial resolution? brunettn thinks if they fix it
+     to be included in the actual archive results meta data that astroquery
+     will pick them up when making the original astropy table
+    -what is the 'COUNT' column?
+  -run ALMA source name sanitation on all query result tables (factor out if
+   useful)
   -need some kind of check and case handling for when the queries have
    already been run but new targets are added
-  -actually incorporate into the query tool class
-  -make it continue to search for the next target if previous one doesn't find
-   any information.
-  -give message when it doesn't find any observation for the target.
-  -make more methods to fully parse the frequency support column into readable
-   and useable (e.g. arrays of floats) forms
-    -currently done for frequency ranges for each SPW in each result row (at
-     the execution block level)
-  -do we want to work over the whole query result table to put all columns in
-   useful forms (like the dates as datetime objects and parsing out the SPW
-   frequecy ranges)?
-    -if yes, brunettn thinks they should all be run automatically when the
-     query is finished (like _convertDateColumnsToDatetime is now)
-  -add description somewhere that when querying a region, the targets added
-   must be tuples with (coordinates, radius) specified like the first two
-   parameters of Alma.query_region
-  -ideas for better name matching
-    -"N" instead of full "NGC" in name is sometimes used
-    -search for substrings for name matching
-    -search in NED for coords and pass that to ALMA
+    -should probably just disallow adding targets after the query is run
+  -deal with dumpSearchResults method
 """
 
-from astropy.table import join, setdiff, vstack
+from astropy.coordinates import SkyCoord, Angle
+from astropy.table import hstack, vstack
+from astropy import units as u
 from astroquery.alma import Alma
 from astroquery.ned import Ned
 from astroquery.utils import commons
-from astropy.coordinates import SkyCoord, Angle
 import numpy as np
 import string
-from tqdm import tqdm
+from tqdm import tqdm, trange
 
 # fix Python SSL errors when downloading using the https
 import os, ssl
@@ -86,7 +72,10 @@ class archiveSearch:
         appear here.
     queryResultsNoNED : dict
         Same as queryResults but only containing the targets that had data in
-        the ALMA archive but did not have a match in NED.
+        the ALMA archive but did not have a singular match in NED (so could be
+        cases with no match in NED or where multiple objects matched to a
+        single ALMA observation and it could not be narrowed down to one
+        automatically).
     queryResultsNoNEDz : dict
         Same as queryResults but only containing the targets that had data in
         the ALMA archive and matched a source in NED but NED had no redshift
@@ -187,6 +176,10 @@ class archiveSearch:
                 self.targets.pop(key)
 
         self._convertDateColumnsToDatetime()
+        self._parseFrequencyRanges()
+        self._parseSpectralResolution()
+        self._parseLineSensitivities()
+        self._parsePolarizations()
 
     def runQueriesWithLines(self, restFreqs, redshiftRange=(0, 1000),
                             lineNames=[], public=False, science=False,
@@ -220,6 +213,14 @@ class archiveSearch:
             that could contain the lines in the specified redshift range. If
             archiveSearch was initialized with the `targets` argument then
             "source_name_resolver" and "ra_dec" also cannot be used here.
+
+        Matching against NED to find source redshifts is attempted first with
+        the ALMA archive coordinates, searching in NED with a search radius of
+        30 arcseconds and only keeping results with type G (galaxy). If more
+        or less than one NED result matches the positional search then a search
+        is attempted based on a sanitized version of the ALMA archive source
+        name. If there is no match to name then the ALMA observation is placed
+        in the queryResultsNoNED dictionary.
         """
         if 'frequency' in kwargs:
             msg = '"frequency" cannot be passed to runQueriesWithLines'
@@ -236,6 +237,7 @@ class archiveSearch:
 
         if len(lineNames) == 0:
             lineNames = ['Line{:}'.format(i) for i in range(len(restFreqs))]
+            lineNames = np.array(lineNames)
 
         inds = restFreqs.argsort()
         restFreqs = restFreqs[inds]
@@ -252,8 +254,6 @@ class archiveSearch:
         self.runQueries(public=public, science=science, frequency=freqLimits,
                         **kwargs)
 
-        self.parseFrequencyRanges()
-
         for target in self.targets:
             if len(self.queryResults[target])>0: # targets with ALMA results
                 currTable = self.queryResults[target]
@@ -265,43 +265,57 @@ class archiveSearch:
                 safeNames = np.char.upper(safeNames)
                 currTable['ALMA sanitized source name'] = safeNames
 
-                uniqueALMAnames = np.unique(currTable['ALMA sanitized source name'])
                 # query NED for object redshifts
                 nedResult = list()
-                pBar = tqdm(uniqueALMAnames, desc='NED cross matching',
-                            unit=' source')
-                for sourceName in pBar:
+                noNEDinds = list()
+                searchCoords = SkyCoord(ra=currTable['RA'],
+                                        dec=currTable['Dec'],
+                                        unit=(u.deg, u.deg), frame='icrs')
+                pBar = trange(len(currTable), desc='NED cross matching',
+                              unit=' source')
+                for i in pBar:
+                    # coordinate search
                     try:
-                        nedSearch = Ned.query_object(sourceName)
-                        nedSearch['ALMA sanitized source name'] = sourceName
+                        nedSearch = Ned.query_region(searchCoords[i],
+                                                     radius=30*u.arcsec,
+                                                     equinox='J2000.0')
+                    except Exception:
+                        pass
+
+                    # only want galaxies
+                    typeInds = np.where(nedSearch['Type'] != b'G')
+                    nedSearch.remove_rows(typeInds)
+
+                    # try name search when not just one coordinate match
+                    if len(nedSearch) != 1:
+                        try:
+                            nedSearch = Ned.query_object(currTable['ALMA sanitized source name'][i])
+                        except Exception:
+                            pass
+
+                    if len(nedSearch) != 1:
+                        noNEDinds.append(i)
+                    else:
                         # next line prevents vstack warnings
                         nedSearch.meta = None
                         nedResult.append(nedSearch)
-                    except Exception:
-                        pass
-                
+
                 if len(nedResult) > 0:
-                    nedResult = vstack(nedResult)
+                    nedResult = vstack(nedResult, join_type='exact')
                 else:
                     msg = 'No NED results returned. ' \
                           + 'nedResult = {:}'.format(nedResult)
                     raise ValueError(msg)
 
-                # store rows without matching name in NED
-                self.queryResultsNoNED[target] = setdiff(currTable, nedResult,
-                                                         keys='ALMA sanitized source name')
+                # store away rows without a single NED match
+                self.queryResultsNoNED[target] = currTable[noNEDinds]
+                currTable.remove_rows(noNEDinds)
 
-                # remove all rows without redshift in NED
+                # store away rows without redshift in NED
                 noZinds = nedResult['Redshift'].mask.nonzero()
-                blankZnames = nedResult['ALMA sanitized source name'][noZinds]
                 nedResult.remove_rows(noZinds)
-
-                # store rows with no redshift in NED but with matching name
-                noZinds = list()
-                for i,row in enumerate(currTable):
-                    if row['ALMA sanitized source name'] in blankZnames:
-                        noZinds.append(i)
                 self.queryResultsNoNEDz[target] = currTable[noZinds]
+                currTable.remove_rows(noZinds)
 
                 # remove rows where redshift not in range
                 outOfRangeZInds = list()
@@ -310,15 +324,16 @@ class archiveSearch:
                         redshiftRange[1] < row['Redshift']):
                         outOfRangeZInds.append(i)
                 nedResult.remove_rows(outOfRangeZInds)
+                currTable.remove_rows(outOfRangeZInds)
 
                 # rectify this naming difference between NED and ALMA
                 nedResult.rename_column('DEC', 'Dec')
 
-                nedResult.keep_columns(['Object Name', 'RA', 'Dec', 'Redshift',
-                                        'ALMA sanitized source name'])
+                nedResult.keep_columns(['Object Name', 'RA', 'Dec',
+                                        'Redshift'])
 
-                ALMAnedResults = join(currTable, nedResult,
-                                      keys='ALMA sanitized source name')
+                ALMAnedResults = hstack([currTable, nedResult],
+                                        join_type='exact')
 
                 # tidy up column names
                 ALMAnedResults.rename_column('Source name', 'ALMA source name')
@@ -415,7 +430,7 @@ class archiveSearch:
             uniqueBands[tar] = np.unique(self.queryResults[tar]['Band'])
         return uniqueBands
 
-    def parseFrequencyRanges(self):
+    def _parseFrequencyRanges(self):
         """Parses observed frequency ranges into something more useable.
 
         Loops through the list of targets and then through each query result
@@ -430,10 +445,11 @@ class archiveSearch:
         quantity with units.
         """
         for tar in self.targets:
+            table = self.queryResults[tar]
             targetFreqRanges = list()
-            freqUnit = self.queryResults[tar]['Frequency support'].unit
-            for i in range(len(self.queryResults[tar])):
-                freqStr = self.queryResults[tar]['Frequency support'][i]
+            freqUnit = table['Frequency support'].unit
+            for i in range(len(table)):
+                freqStr = table['Frequency support'][i]
                 freqStr = freqStr.split('U')
                 rowFreqRanges = list()
                 for j in range(len(freqStr)):
@@ -451,8 +467,135 @@ class archiveSearch:
                 
                 targetFreqRanges.append(rowFreqRanges)
                     
-            self.queryResults[tar]['Frequency ranges'] = targetFreqRanges
-            self.queryResults[tar]['Frequency ranges'].unit = freqUnit
+            table['Frequency ranges'] = targetFreqRanges
+            table['Frequency ranges'].unit = freqUnit
+
+    def _parseSpectralResolution(self):
+        """Parses all spectral resolution information into a more useful form.
+
+        Loops through the list of targets and then through each query result
+        row pulling out the spectral resolution stored in the query result
+        column 'Frequency support' for each spectral window (SPW). This
+        replaces the current 'Frequency resolution' column with lists of
+        astropy quantities specifying the spectral resolution (because the
+        current column only has the value for the first SPW).
+
+        The new column is easy to read by people and is in a form where math
+        can be done with the resolutions. Each resolution is an astropy
+        float quantity with units.
+        """
+        for tar in self.targets:
+            table = self.queryResults[tar]
+            if type(table['Frequency resolution'][0]) != np.float64:
+                msg = 'Dev alert: "Frequency resolution" may have more than '
+                msg += 'one entry per observation so it may not be wise to '
+                msg += 'completely replace it in _parseSpectralResolution '
+                msg += 'anymore.'
+                print(msg)
+            targetRes = list()
+            for i in range(len(table)):
+                freqStr = table['Frequency support'][i]
+                freqStr = freqStr.split('U')
+                rowRes = list()
+                for j in range(len(freqStr)):
+                    resolution = freqStr[j].split(',')
+                    resolution = u.Quantity(resolution[1])
+                    resolution = resolution.to('kHz')
+                    rowRes.append(resolution.value)
+                targetRes.append(rowRes)
+
+            table.remove_column('Frequency resolution')
+
+            table['Frequency resolution'] = targetRes
+            table['Frequency resolution'].unit = 'kHz'
+
+    def _parseLineSensitivities(self):
+        """Parses all line sensitivity information into a more useful form.
+
+        Loops through the list of targets and then through each query result
+        row pulling out the line sensitivities stored in the query result
+        column 'Frequency support'. This includes the sensitivity at the native
+        spectral resolution and with 10 km/s wide channels, for all spectral
+        windows (SPWs). A new column is added to the target query result table
+        called 'Line sensitivity (native)' where lists of astropy quantities are
+        stored that give the sensitivity at the native spectral resolution in
+        each SPW for each row (i.e. execution block). This also replaces the
+        current 'Line sensitivity (10 km/s)' column with one of the same form
+        as for the native spectral resolution (because the current column only
+        has the sensitivity for one SPW and without units).
+
+        The new column is easy to read by people and is in a form where math
+        can be done with the sensitivities. Each sensitivity is an astropy
+        float quantity with units.
+        """
+        for tar in self.targets:
+            table = self.queryResults[tar]
+            if table['Line sensitivity (10 km/s)'].unit:
+                msg = 'Dev alert: "Line sensitivity (10 km/s)" column has '
+                msg += 'units so it may not be wise to completely replace '
+                msg += 'it in _parseLineSensitivities anymore.'
+                print(msg)
+            tar10sens = list()
+            tarNatSens = list()
+            for i in range(len(table)):
+                freqStr = table['Frequency support'][i]
+                freqStr = freqStr.split('U')
+                row10sens = list()
+                rowNatSens = list()
+                for j in range(len(freqStr)):
+                    sens = freqStr[j].split(',')
+                    tenKmsSens = sens[2]
+                    tenKmsSens = tenKmsSens.split('@')[0]
+                    tenKmsSens = u.Quantity(tenKmsSens)
+                    tenKmsSens = tenKmsSens.to('mJy/beam')
+                    row10sens.append(tenKmsSens.value)
+                    nativeSens = sens[3]
+                    nativeSens = nativeSens.split('@')[0]
+                    nativeSens = u.Quantity(nativeSens)
+                    nativeSens = nativeSens.to('mJy/beam')
+                    rowNatSens.append(nativeSens.value)
+                tar10sens.append(row10sens)
+                tarNatSens.append(rowNatSens)
+
+            table.remove_column('Line sensitivity (10 km/s)')
+
+            table['Line sensitivity (10 km/s)'] = tar10sens
+            table['Line sensitivity (10 km/s)'].unit = 'mJy/beam'
+            table['Line sensitivity (native)'] = tarNatSens
+            table['Line sensitivity (native)'].unit = 'mJy/beam'
+
+    def _parsePolarizations(self):
+        """Parses all polarization information into a more complete form.
+
+        Loops through the list of targets and then through each query result
+        row pulling out the polarization stored in the query result column
+        'Frequency support' for each spectral window (SPW). This
+        replaces the current 'Pol products' column with lists of strings
+        specifying the polarization (because the current column only has the
+        value for the first SPW).
+        """
+        for tar in self.targets:
+            table = self.queryResults[tar]
+            if type(table['Pol products'][0]) != str:
+                msg = 'Dev alert: "Pol products" column may have more than '
+                msg += 'one entry per observation so it may not be wise to '
+                msg += 'completely replace it in _parseSpectralResolution '
+                msg += 'anymore.'
+                print(msg)
+            targetPol = list()
+            for i in range(len(table)):
+                freqStr = table['Frequency support'][i]
+                freqStr = freqStr.split('U')
+                rowPol = list()
+                for j in range(len(freqStr)):
+                   polarization  = freqStr[j].split(',')
+                   polarization = polarization[4].strip(' ]')
+                   rowPol.append(polarization)
+                targetPol.append(rowPol)
+
+            table.remove_column('Pol products')
+
+            table['Pol products'] = targetPol
 
     def dumpSearchResults(self, target_data, bands,
                           unique_public_circle_parameters=False,
@@ -529,24 +672,26 @@ class archiveSearch:
 if __name__ == "__main__":
     # region query with line search
     if True:
-        target = ('12h26m32.1s 12d43m24s', '6deg')
-        myarchiveSearch = archiveSearch(target)
-        mySurvey.runTargetQueryWithLines([113.123337, 230.538],
-                                     redshiftRange=(0, 0.1),
-                                     science=True)
-        tar = 'coord=12h26m32.1s 12d43m24s radius=6deg'
-        print(len(mySurvey.queryResults[tar]))
-        print(mySurvey.queryResultsNoNED[tar])
-        print(mySurvey.queryResultsNoNEDz[tar])
+        target = ['12h26m32.1s 12d43m24s', '6deg']
+        myarchiveSearch = archiveSearch(targets=[target])
+        myarchiveSearch.runQueriesWithLines([113.123337, 230.538],
+                                            redshiftRange=(0, 0.1),
+                                            lineNames=['CO (J=2-1)',
+                                                       'CN (N=1-0)'],
+                                            science=True)
+        #tar = 'coord=12h26m32.1s 12d43m24s radius=6deg'
+        #print(len(myarchiveSearch.queryResults[tar]))
+        #print(myarchiveSearch.queryResultsNoNED[tar])
+        #print(myarchiveSearch.queryResultsNoNEDz[tar])
 
     # region query
     if False:
         target = ('12h26m32.1s 12d43m24s', '30arcmin')
-        mySurvey = survey(target)
-        mySurvey.runTargetQuery()
-        #mySurvey.observedBands()
-        #mySurvey.parseFrequencyRanges()
-        mySurvey.printQueryResults()
+        myarchiveSearch = survey(target)
+        myarchiveSearch.runTargetQuery()
+        #myarchiveSearch.observedBands()
+        #myarchiveSearch.parseFrequencyRanges()
+        myarchiveSearch.printQueryResults()
 
     # object name query
     if False:
@@ -554,14 +699,14 @@ if __name__ == "__main__":
         print(targets)
         print("--------------")
 
-        mySurvey = survey(targets)
-        mySurvey.runTargetQuery()
-        mySurvey.observedBands()
-        mySurvey.parseFrequencyRanges()
-        print(mySurvey.targets)
-        print(mySurvey.uniqueBands())
-        mySurvey.printQueryResults()
-        lines = mySurvey.formatQueryResults(max_lines=-1, max_width=-1)
+        myarchiveSearch = survey(targets)
+        myarchiveSearch.runTargetQuery()
+        myarchiveSearch.observedBands()
+        myarchiveSearch.parseFrequencyRanges()
+        print(myarchiveSearch.targets)
+        print(myarchiveSearch.uniqueBands())
+        myarchiveSearch.printQueryResults()
+        lines = myarchiveSearch.formatQueryResults(max_lines=-1, max_width=-1)
         with open('survey_out.txt', 'w') as f:
             for line in lines:
                 f.write(line+'\n')
