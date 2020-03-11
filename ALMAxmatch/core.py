@@ -485,29 +485,32 @@ class archiveSearch:
         float quantity with units.
         """
         for tar in self.targets:
-            table = self.queryResults[tar]
-            if type(table['Frequency resolution'][0]) != np.float64:
-                msg = 'Dev alert: "Frequency resolution" may have more than '
-                msg += 'one entry per observation so it may not be wise to '
-                msg += 'completely replace it in _parseSpectralResolution '
-                msg += 'anymore.'
-                print(msg)
-            targetRes = list()
-            for i in range(len(table)):
-                freqStr = table['Frequency support'][i]
-                freqStr = freqStr.split('U')
-                rowRes = list()
-                for j in range(len(freqStr)):
-                    resolution = freqStr[j].split(',')
-                    resolution = u.Quantity(resolution[1])
-                    resolution = resolution.to('kHz')
-                    rowRes.append(resolution.value)
-                targetRes.append(rowRes)
+            if len(self.queryResults[tar]) == 0:
+                print(tar, ': No result')
+            else:
+                table = self.queryResults[tar]
+                if type(table['Frequency resolution'][0]) != np.float64:
+                    msg = 'Dev alert: "Frequency resolution" may have more than '
+                    msg += 'one entry per observation so it may not be wise to '
+                    msg += 'completely replace it in _parseSpectralResolution '
+                    msg += 'anymore.'
+                    print(msg)
+                targetRes = list()
+                for i in range(len(table)):
+                    freqStr = table['Frequency support'][i]
+                    freqStr = freqStr.split('U')
+                    rowRes = list()
+                    for j in range(len(freqStr)):
+                        resolution = freqStr[j].split(',')
+                        resolution = u.Quantity(resolution[1])
+                        resolution = resolution.to('kHz')
+                        rowRes.append(resolution.value)
+                    targetRes.append(rowRes)
 
-            table.remove_column('Frequency resolution')
+                table.remove_column('Frequency resolution')
 
-            table['Frequency resolution'] = targetRes
-            table['Frequency resolution'].unit = 'kHz'
+                table['Frequency resolution'] = targetRes
+                table['Frequency resolution'].unit = 'kHz'
 
     def _parseLineSensitivities(self):
         """Parses all line sensitivity information into a more useful form.
