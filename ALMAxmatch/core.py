@@ -175,11 +175,11 @@ class archiveSearch:
             for key in self.invalidNames:
                 self.targets.pop(key)
 
-        self._convertDateColumnsToDatetime()
+#        self._convertDateColumnsToDatetime()
         self._parseFrequencyRanges()
-        self._parseSpectralResolution()
-        self._parseLineSensitivities()
-        self._parsePolarizations()
+#        self._parseSpectralResolution()
+#        self._parseLineSensitivities()
+#        self._parsePolarizations()
 
     def runQueriesWithLines(self, restFreqs, redshiftRange=(0, 1000),
                             lineNames=[], public=False, science=False,
@@ -259,7 +259,7 @@ class archiveSearch:
                 currTable = self.queryResults[target]
 
                 # sanitize ALMA source names
-                safeNames = currTable['Source name']
+                safeNames = currTable['target_name']
                 safeNames = np.char.replace(safeNames, b' ', b'')
                 safeNames = np.char.replace(safeNames, b'_', b'')
                 safeNames = np.char.upper(safeNames)
@@ -268,8 +268,8 @@ class archiveSearch:
                 # query NED for object redshifts
                 nedResult = list()
                 noNEDinds = list()
-                searchCoords = SkyCoord(ra=currTable['RA'],
-                                        dec=currTable['Dec'],
+                searchCoords = SkyCoord(ra=currTable['s_ra'],
+                                        dec=currTable['s_dec'],
                                         unit=(u.deg, u.deg), frame='icrs')
                 pBar = trange(len(currTable), desc='NED cross matching',
                               unit=' source')
@@ -303,7 +303,7 @@ class archiveSearch:
                 if len(nedResult) > 0:
                     nedResult = vstack(nedResult, join_type='exact')
                 else:
-                    msg = 'No NED results returned. ' \
+                    msg = 'No NED results for '+str(target)+' returned. ' \
                           + 'nedResult = {:}'.format(nedResult)
                     raise ValueError(msg)
 
@@ -336,12 +336,12 @@ class archiveSearch:
                                         join_type='exact')
 
                 # tidy up column names
-                ALMAnedResults.rename_column('Source name', 'ALMA source name')
-                ALMAnedResults.rename_column('RA_1', 'ALMA RA')
-                ALMAnedResults.rename_column('Dec_1', 'ALMA Dec')
+                ALMAnedResults.rename_column('target_name', 'ALMA source name')
+                ALMAnedResults.rename_column('s_ra', 'ALMA RA')
+                ALMAnedResults.rename_column('s_dec', 'ALMA Dec')
                 ALMAnedResults.rename_column('Object Name', 'NED source name')
-                ALMAnedResults.rename_column('RA_2', 'NED RA')
-                ALMAnedResults.rename_column('Dec_2', 'NED Dec')
+                ALMAnedResults.rename_column('RA', 'NED RA')
+                ALMAnedResults.rename_column('Dec', 'NED Dec')
                 ALMAnedResults.rename_column('Redshift', 'NED Redshift')
 
                 # mark flags if spw is on line (initialized to False)
@@ -414,12 +414,12 @@ class archiveSearch:
         useful.
         """
         for target in self.targets:
-            relCol = self.queryResults[target]['Release date']
+            relCol = self.queryResults[target]['obs_release_date']
             obsCol = self.queryResults[target]['Observation date']
             for i in range(len(relCol)):
                 relCol[i] = np.datetime64(relCol[i])
                 obsCol[i] = np.datetime64(obsCol[i])
-            self.queryResults[target]['Release date'] = relCol
+            self.queryResults[target]['obs_release_date'] = relCol
             self.queryResults[target]['Observation date'] = obsCol
 
     def uniqueBands(self):
@@ -435,7 +435,7 @@ class archiveSearch:
 
         Loops through the list of targets and then through each query result
         row pulling out the spectral window (SPW) frequency ranges stored in
-        the query result column 'Frequency support'. A new column is then added
+        the query result column 'frequency_support'. A new column is then added
         to the target query result table called 'Frequency ranges' where lists
         of astropy quantity 2-tuples are stored that give the maximum and
         minimum frequency in each SPW for each row (i.e. execution block).
@@ -446,10 +446,12 @@ class archiveSearch:
         """
         for tar in self.targets:
             table = self.queryResults[tar]
+            if len(table) == 0:
+                continue
             targetFreqRanges = list()
-            freqUnit = table['Frequency support'].unit
+            freqUnit = table['frequency_support'].unit
             for i in range(len(table)):
-                freqStr = table['Frequency support'][i]
+                freqStr = table['frequency_support'][i]
                 freqStr = freqStr.split('U')
                 rowFreqRanges = list()
                 for j in range(len(freqStr)):
@@ -475,7 +477,7 @@ class archiveSearch:
 
         Loops through the list of targets and then through each query result
         row pulling out the spectral resolution stored in the query result
-        column 'Frequency support' for each spectral window (SPW). This
+        column 'frequency_support' for each spectral window (SPW). This
         replaces the current 'Frequency resolution' column with lists of
         astropy quantities specifying the spectral resolution (because the
         current column only has the value for the first SPW).
@@ -497,7 +499,7 @@ class archiveSearch:
                     print(msg)
                 targetRes = list()
                 for i in range(len(table)):
-                    freqStr = table['Frequency support'][i]
+                    freqStr = table['frequency_support'][i]
                     freqStr = freqStr.split('U')
                     rowRes = list()
                     for j in range(len(freqStr)):
@@ -517,13 +519,13 @@ class archiveSearch:
 
         Loops through the list of targets and then through each query result
         row pulling out the line sensitivities stored in the query result
-        column 'Frequency support'. This includes the sensitivity at the native
+        column 'frequency_support'. This includes the sensitivity at the native
         spectral resolution and with 10 km/s wide channels, for all spectral
         windows (SPWs). A new column is added to the target query result table
         called 'Line sensitivity (native)' where lists of astropy quantities are
         stored that give the sensitivity at the native spectral resolution in
         each SPW for each row (i.e. execution block). This also replaces the
-        current 'Line sensitivity (10 km/s)' column with one of the same form
+        current 'sensitivity_10kms' column with one of the same form
         as for the native spectral resolution (because the current column only
         has the sensitivity for one SPW and without units).
 
@@ -533,15 +535,15 @@ class archiveSearch:
         """
         for tar in self.targets:
             table = self.queryResults[tar]
-            if table['Line sensitivity (10 km/s)'].unit:
-                msg = 'Dev alert: "Line sensitivity (10 km/s)" column has '
+            if table['sensitivity_10kms'].unit:
+                msg = 'Dev alert: "sensitivity_10kms" column has '
                 msg += 'units so it may not be wise to completely replace '
                 msg += 'it in _parseLineSensitivities anymore.'
                 print(msg)
             tar10sens = list()
             tarNatSens = list()
             for i in range(len(table)):
-                freqStr = table['Frequency support'][i]
+                freqStr = table['frequency_support'][i]
                 freqStr = freqStr.split('U')
                 row10sens = list()
                 rowNatSens = list()
@@ -560,10 +562,10 @@ class archiveSearch:
                 tar10sens.append(row10sens)
                 tarNatSens.append(rowNatSens)
 
-            table.remove_column('Line sensitivity (10 km/s)')
+            table.remove_column('sensitivity_10kms')
 
-            table['Line sensitivity (10 km/s)'] = tar10sens
-            table['Line sensitivity (10 km/s)'].unit = 'mJy/beam'
+            table['sensitivity_10kms'] = tar10sens
+            table['sensitivity_10kms'].unit = 'mJy/beam'
             table['Line sensitivity (native)'] = tarNatSens
             table['Line sensitivity (native)'].unit = 'mJy/beam'
 
@@ -572,7 +574,7 @@ class archiveSearch:
 
         Loops through the list of targets and then through each query result
         row pulling out the polarization stored in the query result column
-        'Frequency support' for each spectral window (SPW). This
+        'frequency_support' for each spectral window (SPW). This
         replaces the current 'Pol products' column with lists of strings
         specifying the polarization (because the current column only has the
         value for the first SPW).
@@ -580,15 +582,15 @@ class archiveSearch:
         for tar in self.targets:
             table = self.queryResults[tar]
             if len(table) > 0:
-                if type(table['Pol products'][0]) != str:
-                    msg = 'Dev alert: "Pol products" column may have more than '
+                if type(table['pol_states'][0]) != str:
+                    msg = 'Dev alert: "pol_states" column may have more than '
                     msg += 'one entry per observation so it may not be wise to '
                     msg += 'completely replace it in _parseSpectralResolution '
                     msg += 'anymore.'
                     print(msg)
                 targetPol = list()
                 for i in range(len(table)):
-                    freqStr = table['Frequency support'][i]
+                    freqStr = table['frequency_support'][i]
                     freqStr = freqStr.split('U')
                     rowPol = list()
                     for j in range(len(freqStr)):
@@ -597,9 +599,9 @@ class archiveSearch:
                        rowPol.append(polarization)
                     targetPol.append(rowPol)
 
-                table.remove_column('Pol products')
+                table.remove_column('pol_states')
 
-                table['Pol products'] = targetPol
+                table['pol_states'] = targetPol
 
     def dumpSearchResults(self, target_data, bands,
                           unique_public_circle_parameters=False,
@@ -609,8 +611,8 @@ class archiveSearch:
         print( "Unique bands: ", bands)
         for band in bands:
             print("BAND {0}".format(band))
-            privrows = sum((target_data['Band']==band) & (target_data['Release date']>now))
-            pubrows  = sum((target_data['Band']==band) & (target_data['Release date']<=now))
+            privrows = sum((target_data['Band']==band) & (target_data['obs_release_date']>now))
+            pubrows  = sum((target_data['Band']==band) & (target_data['obs_release_date']<=now))
             print("PUBLIC:  Number of rows: {0}.  Unique pointings: {1}".format(pubrows, len(unique_public_circle_parameters[band])))
             print("PRIVATE: Number of rows: {0}.  Unique pointings: {1}".format(privrows, len(unique_private_circle_parameters[band])))
 
