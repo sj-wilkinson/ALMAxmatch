@@ -175,10 +175,10 @@ class archiveSearch:
             for key in self.invalidNames:
                 self.targets.pop(key)
 
-#        self._convertDateColumnsToDatetime()
+        self._convertDateColumnsToDatetime()
         self._parseFrequencyRanges()
 #        self._parseSpectralResolution()
-#        self._parseLineSensitivities()
+        self._parseLineSensitivities()
 #        self._parsePolarizations()
 
     def runQueriesWithLines(self, restFreqs, redshiftRange=(0, 1000),
@@ -413,13 +413,14 @@ class archiveSearch:
         useful.
         """
         for target in self.targets:
+            if len(self.queryResults[target]) == 0:
+                continue
+            
             relCol = self.queryResults[target]['obs_release_date']
-            obsCol = self.queryResults[target]['Observation date']
             for i in range(len(relCol)):
                 relCol[i] = np.datetime64(relCol[i])
-                obsCol[i] = np.datetime64(obsCol[i])
             self.queryResults[target]['obs_release_date'] = relCol
-            self.queryResults[target]['Observation date'] = obsCol
+            
 
     def uniqueBands(self):
         """Return unique ALMA bands in the `queryResults` tables.
@@ -534,6 +535,8 @@ class archiveSearch:
         """
         for tar in self.targets:
             table = self.queryResults[tar]
+            if len(table) == 0:
+                continue
             if table['sensitivity_10kms'].unit:
                 msg = 'Dev alert: "sensitivity_10kms" column has '
                 msg += 'units so it may not be wise to completely replace '
