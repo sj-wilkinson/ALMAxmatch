@@ -303,9 +303,8 @@ class archiveSearch:
                 if len(nedResult) > 0:
                     nedResult = vstack(nedResult, join_type='exact')
                 else:
-                    msg = 'No NED results for '+str(target)+' returned. ' \
-                          + 'nedResult = {:}'.format(nedResult)
-                    raise ValueError(msg)
+                    msg = 'No NED results for {:} returned. nedResult = {:}'
+                    raise ValueError(msg.format(target, nedResult))
 
                 # store away rows without a single NED match
                 self.queryResultsNoNED[target] = currTable[noNEDinds]
@@ -563,7 +562,7 @@ class archiveSearch:
                 tarNatSens.append(rowNatSens)
 
             table.remove_column('sensitivity_10kms')
-
+            
             table['sensitivity_10kms'] = tar10sens
             table['sensitivity_10kms'].unit = 'mJy/beam'
             table['Line sensitivity (native)'] = tarNatSens
