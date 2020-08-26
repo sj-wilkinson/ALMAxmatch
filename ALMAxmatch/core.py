@@ -31,6 +31,7 @@ from astroquery.utils import commons
 import numpy as np
 import string
 from tqdm import tqdm, trange
+import datetime
 
 # fix Python SSL errors when downloading using the https
 import os, ssl
@@ -415,13 +416,16 @@ class archiveSearch:
         for target in self.targets:
             if len(self.queryResults[target]) == 0:
                 continue
-            
+            obsCol_temp = self.queryResults[target]['t_min']
+            obsCol = list(obsCol_temp)
             relCol = self.queryResults[target]['obs_release_date']
             for i in range(len(relCol)):
                 relCol[i] = np.datetime64(relCol[i])
+                obsCol[i] = datetime.date(1858, 11, 17)+\
+                            datetime.timedelta(days=obsCol[i])
             self.queryResults[target]['obs_release_date'] = relCol
+            self.queryResults[target]['obs_start_date'] = obsCol
             
-
     def uniqueBands(self):
         """Return unique ALMA bands in the `queryResults` tables.
         """
