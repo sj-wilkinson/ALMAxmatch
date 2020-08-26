@@ -421,8 +421,8 @@ class archiveSearch:
             relCol = self.queryResults[target]['obs_release_date']
             for i in range(len(relCol)):
                 relCol[i] = np.datetime64(relCol[i])
-                obsCol[i] = datetime.date(1858, 11, 17)+\
-                            datetime.timedelta(days=obsCol[i])
+                obsCol[i] = np.datetime64('1858-11-17')+\
+                            np.timedelta64(int(obsCol[i]), 'D')
             self.queryResults[target]['obs_release_date'] = relCol
             self.queryResults[target]['obs_start_date'] = obsCol
             
