@@ -180,7 +180,7 @@ class archiveSearch:
         self._parseFrequencyRanges()
         self._parseSpectralResolution()
         self._parseLineSensitivities()
-#        self._parsePolarizations()
+        self._parsePolarizations()
 
     def runQueriesWithLines(self, restFreqs, redshiftRange=(0, 1000),
                             lineNames=[], public=False, science=False,
@@ -582,7 +582,7 @@ class archiveSearch:
         row pulling out the polarization stored in the query result column
         'frequency_support' for each spectral window (SPW). This
         replaces the current 'Pol products' column with lists of strings
-        specifying the polarization (because the current column only has the
+        specifying the polarization(s) (because the current column only has the
         value for the first SPW).
         """
         for tar in self.targets:
@@ -591,7 +591,7 @@ class archiveSearch:
                 if type(table['pol_states'][0]) != str:
                     msg = 'Dev alert: "pol_states" column may have more than '
                     msg += 'one entry per observation so it may not be wise to '
-                    msg += 'completely replace it in _parseSpectralResolution '
+                    msg += 'completely replace it in _parsePolarizations '
                     msg += 'anymore.'
                     print(msg)
                 targetPol = list()
@@ -607,7 +607,7 @@ class archiveSearch:
 
                 table.remove_column('pol_states')
 
-                table['pol_states'] = targetPol
+                table['Polarizations'] = targetPol
 
     def dumpSearchResults(self, target_data, bands,
                           unique_public_circle_parameters=False,
