@@ -178,7 +178,7 @@ class archiveSearch:
 
         self._convertDateColumnsToDatetime()
         self._parseFrequencyRanges()
-#        self._parseSpectralResolution()
+        self._parseSpectralResolution()
         self._parseLineSensitivities()
 #        self._parsePolarizations()
 
@@ -495,8 +495,8 @@ class archiveSearch:
                 print(tar, ': No result')
             else:
                 table = self.queryResults[tar]
-                if type(table['Frequency resolution'][0]) != np.float64:
-                    msg = 'Dev alert: "Frequency resolution" may have more than '
+                if type(table['em_resolution'][0]) != np.float64:
+                    msg = 'Dev alert: "em_resolution" may have more than '
                     msg += 'one entry per observation so it may not be wise to '
                     msg += 'completely replace it in _parseSpectralResolution '
                     msg += 'anymore.'
@@ -513,7 +513,7 @@ class archiveSearch:
                         rowRes.append(resolution.value)
                     targetRes.append(rowRes)
 
-                table.remove_column('Frequency resolution')
+                table.remove_column('em_resolution')
 
                 table['Frequency resolution'] = targetRes
                 table['Frequency resolution'].unit = 'kHz'
