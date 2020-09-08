@@ -481,26 +481,16 @@ class archiveSearch:
 
         Loops through the list of targets and then through each query result
         row pulling out the spectral resolution stored in the query result
-        column 'frequency_support' for each spectral window (SPW). This
-        replaces the current 'Frequency resolution' column with lists of
-        astropy quantities specifying the spectral resolution (because the
-        current column only has the value for the first SPW).
-
-        The new column is easy to read by people and is in a form where math
-        can be done with the resolutions. Each resolution is an astropy
-        float quantity with units.
+        column 'frequency_support' for each spectral window (SPW). The new
+        column is easy to read by people and is in a form where math can be done
+        ith the resolutions. Each resolution is an astropy float quantity with
+        units.
         """
         for tar in self.targets:
             if len(self.queryResults[tar]) == 0:
                 print(tar, ': No result')
             else:
                 table = self.queryResults[tar]
-                if type(table['em_resolution'][0]) != np.float64:
-                    msg = 'Dev alert: "em_resolution" may have more than '
-                    msg += 'one entry per observation so it may not be wise to '
-                    msg += 'completely replace it in _parseSpectralResolution '
-                    msg += 'anymore.'
-                    print(msg)
                 targetRes = list()
                 for i in range(len(table)):
                     freqStr = table['frequency_support'][i]
@@ -512,8 +502,6 @@ class archiveSearch:
                         resolution = resolution.to('kHz')
                         rowRes.append(resolution.value)
                     targetRes.append(rowRes)
-
-                table.remove_column('em_resolution')
 
                 table['Frequency resolution'] = targetRes
                 table['Frequency resolution'].unit = 'kHz'
