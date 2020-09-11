@@ -31,7 +31,6 @@ from astroquery.utils import commons
 import numpy as np
 import string
 from tqdm import tqdm, trange
-import datetime
 
 # fix Python SSL errors when downloading using the https
 import os, ssl
