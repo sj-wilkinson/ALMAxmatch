@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<VOTABLE xmlns="http://www.ivoa.net/xml/VOTable/v1.3" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" version="1.4">
+  <RESOURCE type="results">
+    <INFO name="QUERY_STATUS" value="OK" />
+    <INFO name="QUERY_TIMESTAMP" value="2023-10-26T00:10:20.517" />
+    <INFO name="QUERY" value="select top 1 s_ra, s_dec from ivoa.obscore" />
+    <TABLE>
+      <FIELD name="s_ra" datatype="double" ucd="pos.eq.ra" unit="deg" utype="obscore:Char.SpatialAxis.Coverage.Location.Coord.Position2D.Value2.C1" xtype="adql:DOUBLE">
+        <DESCRIPTION>RA of central coordinates</DESCRIPTION>
+      </FIELD>
+      <FIELD name="s_dec" datatype="double" ucd="pos.eq.dec" unit="deg" utype="obscore:Char.SpatialAxis.Coverage.Location.Coord.Position2D.Value2.C2" xtype="adql:DOUBLE">
+        <DESCRIPTION>DEC of central coordinates</DESCRIPTION>
+      </FIELD>
+      <DATA>
+        <TABLEDATA>
+          <TR>
+            <TD>49.82143689</TD>
+            <TD>-0.96964645</TD>
+          </TR>
+          
+          <TR>
+            <TD>323.40752218</TD>
+            <TD>1.07095399</TD>
+          </TR>
+        </TABLEDATA>
+      </DATA>
+    </TABLE>
+    <INFO name="placeholder" value="ignore" />
+  </RESOURCE>
+</VOTABLE>

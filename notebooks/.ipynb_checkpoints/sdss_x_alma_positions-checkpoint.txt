@@ -1,0 +1,4 @@
+failed to read table mytable from https://almascience.nrao.edu/tap/files/sdss_positions_tap.txt-glu69j3yfzrwfzjw
+-----------------------
+
+(0 rows affected)
